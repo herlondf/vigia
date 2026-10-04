@@ -1,0 +1,57 @@
+name: Release
+
+# Gera o instalador por usuário e publica a release no GitHub.
+#
+# Roda SÓ num runner self-hosted (labels self-hosted, windows, vigia): precisa do
+# RAD Studio 22.0 (licenciado), da ComponentesUI (variável VIGIA_CUI no .env do
+# runner) e do Inno Setup. O runner fica desligado no dia a dia; ci/release.ps1
+# liga antes e desliga depois.
+
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: [ self-hosted, windows, vigia ]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build, self-check e instalador
+        id: build
+        shell: pwsh
+        run: ./ci/build-release.ps1
+
+      - name: Tag confere com AppVersion
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          if ('${{ github.ref_name }}' -ne 'v${{ steps.build.outputs.version }}') {
+            throw "Tag ${{ github.ref_name }} difere de AppVersion ${{ steps.build.outputs.version }}"
+          }
+
+      - name: Publicar release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $v = '${{ steps.build.outputs.version }}'
+          # Notas = seção da versão no CHANGELOG.
+          $log = Get-Content docs/CHANGELOG.md -Raw
+          $m = [regex]::Match($log, "(?s)## \[$([regex]::Escape($v))\][^\n]*\n(.*?)(?=\n## \[|\z)")
+          $notes = if ($m.Success) { $m.Groups[1].Value.Trim() } else { "Vigia $v" }
+          $notes | Set-Content notes.md -Encoding utf8
+          gh release create "v$v" "${{ steps.build.outputs.setup }}" --title "Vigia $v" --notes-file notes.md
+
+      - name: Guardar instalador (execução manual)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: Vigia-Setup-${{ steps.build.outputs.version }}
+          path: ${{ steps.build.outputs.setup }}

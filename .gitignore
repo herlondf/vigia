@@ -1,0 +1,27 @@
+# Saída do Delphi
+bin/
+dcu/
+__history/
+__recovery/
+*.local
+*.identcache
+*.dsk
+*.stat
+
+# Instalador gerado (vai para a release, não para o repositório)
+dist/
+
+# Runner self-hosted desta máquina (registro e credenciais locais)
+actions-runner/
+
+# Docs internos de desenvolvimento e config de agentes: ficam só na máquina
+AGENTS.md
+CLAUDE.md
+.claude/
+memory/
+docs/RESUME.md
+docs/CHECKPOINT.md
+docs/TASK.md
+docs/VALIDATION.md
+docs/KNOWLEDGE.md
+docs/PLAN.md
