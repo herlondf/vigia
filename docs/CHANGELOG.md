@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.21.0] - 2026-10-04
+### Added
+- Atualização automática: o Vigia instalado procura release nova uma vez por dia, avisa e se atualiza com um clique (baixa, confere o SHA-256 informado pelo GitHub, instala em silêncio e volta aberto). Em Configurações › Geral › Atualizações: Só avisar, Instalar sozinho ou Não procurar, e o botão Procurar agora.
+- Item "Atualizar para x.y.z" no menu da bandeja quando há versão nova.
+
 ## [0.20.0] - 2026-10-04
 ### Added
 - Instalador por usuário (Inno Setup, sem administrador) em `%LOCALAPPDATA%\Programs\Vigia`, com atalho no menu Iniciar, opção de atalho na área de trabalho e desinstalador. Banco e tokens ficam ao desinstalar.
@@ -9,6 +14,8 @@
 ### Changed
 - Abrir o Vigia de novo (menu Iniciar) com ele já na bandeja mostra a janela.
 - Caminho da ComponentesUI nos projetos vira a propriedade `CUI` (o CI compila de outra pasta).
+### Fixed
+- Comentários duplicados no painel ao abrir a issue com duplo clique.
 ### Removed
 - Código sem uso: desenho de contas em lista, heatmap de eventos, pílulas e avatares antigos, botão de busca, tons duplicados.
 

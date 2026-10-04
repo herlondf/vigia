@@ -27,7 +27,13 @@ A desktop shortcut is optional, in a checkbox of the installer.
 
 ## Update
 
-Run the new installer over the old version. Accounts, tags and tokens are kept.
+Vigia checks for a new version once a day. When it finds one, it tells you: click the alert, or **Atualizar para x.y.z** (Update to x.y.z) in the tray menu. It downloads, verifies the file, installs and reopens. Accounts, tags and tokens are kept.
+
+In **Configurações › Geral › Atualizações** (Settings › General › Updates):
+- **Só avisar** (notify only, default), **Instalar sozinho** (install by itself while the window is closed) or **Não procurar** (never check);
+- **Procurar agora** (check now) checks right away.
+
+You can also run the new installer over the old one, downloaded from the releases page.
 
 ## Uninstall
 

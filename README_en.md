@@ -30,6 +30,7 @@
 - **Alerts that matter.** Assigned, comment, mention, status, due date, review, PR approved, red CI. You choose per account.
 - **Act right there.** Comment, log work, change status, assign, flag an impediment. Always with confirmation.
 - **AI assistant.** Ask "what is due this week?" or say "log 2h on PROJ-1".
+- **Always current.** Tells you when a new version is out and updates itself in one click.
 - **Safe.** Tokens live in the Windows Credential Manager. Never in files or the database.
 
 ## Tour

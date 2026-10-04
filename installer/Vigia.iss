@@ -58,6 +58,22 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueName: 
 
 [Run]
 Filename: "{app}\Vigia.exe"; Parameters: "-show"; Description: "{cm:LaunchProgram,Vigia}"; Flags: nowait postinstall skipifsilent
+; Atualização pelo próprio app (/RELAUNCH=1): reabre o Vigia no fim da instalação silenciosa.
+Filename: "{app}\Vigia.exe"; Parameters: "{code:RelaunchArgs}"; Flags: nowait skipifnotsilent; Check: RelaunchRequested
 
 [UninstallRun]
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM Vigia.exe /FI ""USERNAME eq {username}"""; Flags: runhidden; RunOnceId: "StopVigia"
+
+[Code]
+function RelaunchRequested: Boolean;
+begin
+  Result := ExpandConstant('{param:RELAUNCH|0}') = '1';
+end;
+
+function RelaunchArgs(Param: string): string;
+begin
+  if ExpandConstant('{param:SHOW|0}') = '1' then
+    Result := '-show'
+  else
+    Result := '';
+end;

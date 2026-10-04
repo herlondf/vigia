@@ -27,7 +27,13 @@ Atalho na área de trabalho é opcional, numa caixa do instalador.
 
 ## Atualizar
 
-Rode o instalador da versão nova por cima. Contas, tags e tokens continuam.
+O Vigia procura versão nova uma vez por dia. Quando acha, avisa: clique no aviso, ou em **Atualizar para x.y.z** no menu da bandeja. Ele baixa, confere o arquivo, instala e volta aberto. Contas, tags e tokens continuam.
+
+Em **Configurações › Geral › Atualizações**:
+- **Só avisar** (padrão), **Instalar sozinho** (atualiza com a janela fechada, sem perguntar) ou **Não procurar**;
+- **Procurar agora** confere na hora.
+
+Também dá para rodar o instalador novo por cima, baixado da página de releases.
 
 ## Desinstalar
 

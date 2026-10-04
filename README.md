@@ -28,6 +28,7 @@
 - **Aviso que importa.** Associação, comentário, menção, status, prazo, review, PR aprovado, CI vermelho. Você escolhe por conta.
 - **Age dali mesmo.** Comentar, registrar horas, mudar status, atribuir, marcar impedimento. Sempre com confirmação.
 - **Assistente com IA.** Pergunte "o que vence esta semana?" ou peça "lance 2h na PROJ-1".
+- **Sempre atual.** Avisa quando sai versão nova e se atualiza com um clique.
 - **Seguro.** Tokens ficam no Credential Manager do Windows. Nada vai para arquivo ou banco.
 
 ## Como é

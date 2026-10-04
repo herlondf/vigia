@@ -50,7 +50,8 @@ uses
   Vigia.Model,
   Vigia.UI.Common,
   Vigia.UI.Views,
-  Vigia.UI.Detail;
+  Vigia.UI.Detail,
+  Vigia.Update;
 
 type
   TItemFilter = (ifMine, ifOverdue, ifReview, ifManual, ifFlagged, ifMyPrs, ifSprint);
@@ -61,6 +62,11 @@ type
     FTray: TTrayIcon;
     FTrayMenu: TPopupMenu;
     FAutostartItem: TMenuItem;
+    FUpdateItem: TMenuItem;          // "Atualizar para x.y.z", só com versão nova
+    FUpdate: TUpdateInfo;            // última release mais nova encontrada
+    FUpdateBusy: Boolean;
+    FUpdateMode: TUISelect;
+    FUpdateBtn: TUIButton;
     FNotifier: TNotificationCenter;
     // Shell
     FTabs: TUITabs;
@@ -208,6 +214,10 @@ type
     procedure AccountCardClick(Sender: TObject);
     procedure ItemsMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
     procedure CheckSchedules;
+    procedure CheckForUpdate(AManual: Boolean);
+    procedure StartUpdate(AShow: Boolean);
+    procedure UpdateMenuClick(Sender: TObject);
+    procedure UpdateBtnClick(Sender: TObject);
     function InQuietHours: Boolean;
     function KeyOf(const AItem: TItem): string;
     procedure AccountMenuClick(Sender: TObject; const AID: string);
@@ -635,6 +645,8 @@ begin
   AddItem('Atualizar agora', RefreshClick);
   FAutostartItem := AddItem('Iniciar com o Windows', AutostartClick);
   FAutostartItem.Checked := AutostartEnabled;
+  FUpdateItem := AddItem('Atualizar o Vigia', UpdateMenuClick);
+  FUpdateItem.Visible := False;
   AddItem('-', nil);
   AddItem('Sair', MenuExitClick);
 
@@ -1036,7 +1048,7 @@ begin
   FSettingsColumn := Column;
   Page.OnResize := SettingsResize;
 
-  Card := NewSection('Geral', 3);
+  Card := NewSection('Geral', 4);
   Host := NewRow(Card, 'Iniciar com o Windows',
     'Abre o Vigia na bandeja quando você entra no Windows. Vale só para este usuário.', 60);
   FAutostartToggle := TUIToggle.Create(Self);
@@ -1064,6 +1076,26 @@ begin
   FThemeSelect.OnChange := GeneralSettingChange;
   FThemeSelect.Align := alClient;
   FThemeSelect.Parent := Host;
+
+  Host := NewRow(Card, 'Atualizações', 'Versão ' + AppVersion + '. Procura release nova uma vez por dia ' +
+    '(só na versão instalada).', 340);
+  FUpdateBtn := TUIButton.Create(Self);
+  FUpdateBtn.Caption := 'Procurar agora';
+  FUpdateBtn.Variant := bvOutline;
+  FUpdateBtn.AutoWidth := True;
+  FUpdateBtn.OnClick := UpdateBtnClick;
+  FUpdateBtn.AlignWithMargins := True;
+  FUpdateBtn.Margins.SetBounds(Sp(S.S2), 0, 0, 0);
+  FUpdateBtn.Align := alRight;
+  FUpdateBtn.Parent := Host;
+  FUpdateMode := TUISelect.Create(Self);
+  FUpdateMode.Items.Add('Só avisar');
+  FUpdateMode.Items.Add('Instalar sozinho');
+  FUpdateMode.Items.Add('Não procurar');
+  FUpdateMode.ItemIndex := Max(0, IndexText(Store.GetSetting('update_mode'), ['notify', 'auto', 'off']));
+  FUpdateMode.OnChange := GeneralSettingChange;
+  FUpdateMode.Align := alClient;
+  FUpdateMode.Parent := Host;
 
   Card := NewSection('Notificações', 5);
   Host := NewRow(Card, 'Estilo do aviso',
@@ -1583,6 +1615,9 @@ begin
     Store.SetSetting('dnd_start', Format('%.2d:%.2d', [FDndStart.Hour, FDndStart.Minute]))
   else if Sender = FDndEnd then
     Store.SetSetting('dnd_end', Format('%.2d:%.2d', [FDndEnd.Hour, FDndEnd.Minute]))
+  else if (Sender = FUpdateMode) and (FUpdateMode.ItemIndex >= 0) then
+    Store.SetSetting('update_mode', IfThen(FUpdateMode.ItemIndex = 1, 'auto',
+      IfThen(FUpdateMode.ItemIndex = 2, 'off', 'notify')))
   else if Sender = FNotifySeconds then
     Store.SetSetting('notify_seconds', IntToStr(Round(FNotifySeconds.Value)))
   else if (Sender = FThemeSelect) and (FThemeSelect.ItemIndex >= 0) then
@@ -3424,6 +3459,11 @@ begin
   end;
   if AKey = '*teste' then
     Exit;
+  if AKey = '*update' then
+  begin
+    StartUpdate(True);
+    Exit;
+  end;
   for It in FAll do
     if SameText(It.Key, AKey) and (It.AccountId = AAccountId) then
     begin
@@ -3804,6 +3844,126 @@ begin
     Result := (T >= A) or (T < B);  // atravessa a meia-noite
 end;
 
+{ Release nova no GitHub. Automático: uma vez por dia, só na cópia instalada.
+  Manual (botão): sempre, e diz o resultado. }
+procedure TMainForm.CheckForUpdate(AManual: Boolean);
+begin
+  if FUpdateBusy then
+    Exit;
+  if not AManual then
+  begin
+    if not IsInstalledCopy or (Store.GetSetting('update_mode') = 'off') or
+      (Store.GetSetting('update_last') = FormatDateTime('yyyy-mm-dd', Date)) then
+      Exit;
+    Store.SetSetting('update_last', FormatDateTime('yyyy-mm-dd', Date));
+  end;
+  FUpdateBusy := True;
+  TTask.Run(
+    procedure
+    var
+      Info: TUpdateInfo;
+      Found: Boolean;
+      Err: string;
+    begin
+      Found := False;
+      try
+        Found := FetchLatest(Info);
+      except
+        on E: Exception do
+          Err := E.Message;
+      end;
+      TThread.Queue(nil,
+        procedure
+        begin
+          FUpdateBusy := False;
+          if Err <> '' then
+          begin
+            if AManual then
+              TUIToastManager.Show('Não deu para procurar: ' + Err, ttError, 6000);
+            Exit;
+          end;
+          if not Found then
+          begin
+            if AManual then
+              TUIToastManager.Show('Você já está na versão mais nova (' + AppVersion + ')', ttSuccess);
+            Exit;
+          end;
+          FUpdate := Info;
+          FUpdateItem.Caption := 'Atualizar para ' + Info.Version;
+          FUpdateItem.Visible := True;
+          FUpdateBtn.Caption := 'Atualizar para ' + Info.Version;
+          if (Store.GetSetting('update_mode') = 'auto') and not AManual and not Visible then
+            StartUpdate(False)
+          else
+            Notify('Vigia ' + Info.Version + ' disponível', 'Você está na ' + AppVersion +
+              '. Clique para atualizar; o Vigia fecha e volta sozinho.', '', stInfo, '*update');
+        end);
+    end);
+end;
+
+{ Baixa, confere o hash, roda o instalador e sai. O instalador reabre o Vigia. }
+procedure TMainForm.StartUpdate(AShow: Boolean);
+var
+  Info: TUpdateInfo;
+begin
+  if FUpdateBusy or (FUpdate.Version = '') then
+    Exit;
+  if not IsInstalledCopy then
+  begin
+    TUIToastManager.Show('Esta cópia não foi instalada pelo instalador. Baixe a ' + FUpdate.Version +
+      ' na página de releases.', ttWarning, 6000);
+    Exit;
+  end;
+  Info := FUpdate;
+  FUpdateBusy := True;
+  TUIToastManager.Show('Baixando o Vigia ' + Info.Version + '...', ttInfo);
+  TTask.Run(
+    procedure
+    var
+      Path, Err: string;
+    begin
+      try
+        Path := DownloadUpdate(Info);
+      except
+        on E: Exception do
+          Err := E.Message;
+      end;
+      TThread.Queue(nil,
+        procedure
+        begin
+          FUpdateBusy := False;
+          if Err <> '' then
+          begin
+            TUIToastManager.Show('Atualização falhou: ' + Err, ttError, 8000);
+            Exit;
+          end;
+          try
+            RunInstaller(Path, AShow);
+          except
+            on E: Exception do
+            begin
+              TUIToastManager.Show('Não abriu o instalador: ' + E.Message, ttError, 8000);
+              Exit;
+            end;
+          end;
+          MenuExitClick(nil);
+        end);
+    end);
+end;
+
+procedure TMainForm.UpdateMenuClick(Sender: TObject);
+begin
+  StartUpdate(True);
+end;
+
+procedure TMainForm.UpdateBtnClick(Sender: TObject);
+begin
+  if FUpdate.Version <> '' then
+    StartUpdate(True)
+  else
+    CheckForUpdate(True);
+end;
+
 procedure TMainForm.CheckSchedules;
 var
   It: TItem;
@@ -3832,6 +3992,8 @@ begin
 
   if not InQuietHours then
     RunAutoAi;
+  if FLastPoll > 0 then
+    CheckForUpdate(False);
 
   // Resumo do dia, uma vez por dia a partir do horário escolhido.
   if (Store.GetSetting('summary_on', '1') = '1') and (FLastPoll > 0) and

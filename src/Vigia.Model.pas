@@ -152,7 +152,7 @@ const
   // Curto, para caber ao lado do nome da conta no seletor.
   ShortProviderNames: array[TProviderKind] of string = ('GitHub', 'Jira', 'Jira Cloud');
   // Única fonte da versão: o instalador e a release leem daqui.
-  AppVersion = '0.20.0';
+  AppVersion = '0.21.0';
   // Segunda instância pede para a primeira mostrar a janela.
   ShowMessageName = 'Vigia.Show';
 

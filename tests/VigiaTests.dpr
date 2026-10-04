@@ -11,6 +11,7 @@ uses
   Vigia.Providers in '..\src\Vigia.Providers.pas',
   Vigia.Diff in '..\src\Vigia.Diff.pas',
   Vigia.TrayIcon in '..\src\Vigia.TrayIcon.pas',
+  Vigia.Update in '..\src\Vigia.Update.pas',
   Winapi.Windows,
   Vcl.Graphics,
   System.Types,
@@ -304,6 +305,14 @@ begin
   Check(ItemAllowed(A, 'APP-1') and not ItemAllowed(A, 'ABC-9'), 'filtro: projeto do Jira');
 end;
 
+procedure TestVersions;
+begin
+  Check(CompareVersions('0.20.0', '0.21.0') < 0, 'versão: menor');
+  Check(CompareVersions('v0.21.1', '0.21.0') > 0, 'versão: com v e patch maior');
+  Check(CompareVersions('1.0', '1.0.0') = 0, 'versão: parte faltando vale 0');
+  Check(CompareVersions('0.10.0', '0.9.9') > 0, 'versão: número, não texto');
+end;
+
 procedure TestManualKey;
 var
   G: Boolean;
@@ -515,6 +524,7 @@ begin
     TestJiraFlagAndDueField;
     TestDiff;
     TestManualKey;
+    TestVersions;
     TestCleanComment;
     TestTags;
     TestPrsAndFilter;
