@@ -64,6 +64,7 @@ implementation
 
 uses
   System.Math,
+  System.StrUtils,
   System.UITypes,
   Winapi.Windows,
   Winapi.ShellAPI,
@@ -358,7 +359,7 @@ begin
   if AKey <> '' then
   begin
     Btn := TUIButton.Create(F);
-    Btn.Caption := 'Ver no Vigia';
+    Btn.Caption := IfThen(AKey = '*update', 'Atualizar', 'Ver no Vigia');
     Btn.Size := bsSM;
     Btn.AutoWidth := True;
     Btn.OnClick := F.DetailClick;
