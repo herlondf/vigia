@@ -1,6 +1,6 @@
 unit Vigia.Providers;
 
-{ Chamadas HTTP ao GitHub e ao Jira, normalizadas em TItem.
+{ Chamadas HTTP ao GitHub, GitLab, Jira e Azure DevOps, normalizadas em TItem.
   Tudo bloqueante: chamar fora da thread de UI.
   As funções Parse* ficam públicas para o self-check rodar sem rede. }
 
@@ -67,8 +67,9 @@ function FetchJobLog(const AAccount: TAccount; const AToken, AJobUrl: string): s
 procedure AddWorklog(const AAccount: TAccount; const AToken, AKey: string;
   AHours: Double; AStarted: TDateTime; const AComment: string);
 
-{ 'dono/repo#12' -> GitHub; 'PROJ-123' -> Jira; outro formato -> vazio. Já normalizada. }
-function NormalizeManualKey(const AKey: string; out AIsGitHub: Boolean): string;
+{ 'dono/repo#12' (ou '!5' no GitLab) -> kfRepo; 'PROJ-123' -> kfJira;
+  'Projeto#123' -> kfAzure; outro formato -> vazio. Já normalizada. }
+function NormalizeManualKey(const AKey: string; out AFamily: TKeyFamily): string;
 
 { Texto de comentário para exibir: tira tags HTML e decodifica entidades
   (o Jira Server devolve '&aacute;' e afins em alguns comentários). }
@@ -84,6 +85,8 @@ function ParseGitHubIssue(AJson: TJSONObject; AAccountId: Integer): TItem;
 function GitHubKeyFromApiUrl(const AUrl: string): string;
 function ParseJiraIssue(AJson: TJSONObject; const AAccount: TAccount;
   const AMe: TIdentity; const AFlagField: string = ''; const ADueField: string = ''): TItem;
+function ParseGitLabItem(AJson: TJSONObject; AAccountId: Integer; AIsMR: Boolean): TItem;
+function ParseAzureItem(AJson: TJSONObject; const AAccount: TAccount; const AMe: TIdentity): TItem;
 
 implementation
 
@@ -138,6 +141,15 @@ begin
     pkJiraCloud:
       Result := [TNameValuePair.Create('Authorization', 'Basic ' +
           TNetEncoding.Base64String.Encode(AAccount.Login + ':' + AToken)),
+        TNameValuePair.Create('Accept', 'application/json')];
+    pkGitLab:
+      Result := [TNameValuePair.Create('PRIVATE-TOKEN', AToken),
+        TNameValuePair.Create('Accept', 'application/json'),
+        TNameValuePair.Create('User-Agent', 'Vigia')];
+    pkAzure:
+      // PAT do Azure DevOps vai como Basic com usuário vazio.
+      Result := [TNameValuePair.Create('Authorization', 'Basic ' +
+          TNetEncoding.Base64String.Encode(':' + AToken).Replace(#13#10, '')),
         TNameValuePair.Create('Accept', 'application/json')];
   end;
 end;
@@ -219,9 +231,14 @@ var
   JO: TJSONObject;
   Pair: TJSONPair;
 begin
-  Headers := AuthHeaders(AAccount, AToken) +
-    [TNameValuePair.Create('Content-Type', 'application/json')];
-  if AAccount.Kind <> pkGitHub then
+  // Azure muda campos por JSON Patch (PATCH e criação de work item).
+  if (AAccount.Kind = pkAzure) and ((AMethod = 'PATCH') or APath.Contains('/_apis/wit/workitems/$')) then
+    Headers := AuthHeaders(AAccount, AToken) +
+      [TNameValuePair.Create('Content-Type', 'application/json-patch+json')]
+  else
+    Headers := AuthHeaders(AAccount, AToken) +
+      [TNameValuePair.Create('Content-Type', 'application/json')];
+  if AAccount.Kind in JiraKinds then
     Headers := Headers + [TNameValuePair.Create('X-Atlassian-Token', 'no-check'),
       TNameValuePair.Create('Origin', TrimSlash(AAccount.BaseUrl)),
       TNameValuePair.Create('Referer', TrimSlash(AAccount.BaseUrl) + '/')];
@@ -471,12 +488,20 @@ end;
 
 { ── Quem sou eu ─────────────────────────────────────────────────────────── }
 
+function GitLabMe(const AAccount: TAccount; const AToken: string; out ANumericId: string): TIdentity; forward;
+function AzureMe(const AAccount: TAccount; const AToken: string): TIdentity; forward;
+
 function WhoAmI(const AAccount: TAccount; const AToken: string): TIdentity;
 var
   J: TJSONValue;
+  NumId: string;
 begin
   if AToken = '' then
     raise Exception.Create('Token vazio');
+  case AAccount.Kind of
+    pkGitLab: Exit(GitLabMe(AAccount, AToken, NumId));
+    pkAzure: Exit(AzureMe(AAccount, AToken));
+  end;
   case AAccount.Kind of
     pkGitHub: J := GetJson(AAccount, AToken, '/user');
     pkJiraServer: J := GetJson(AAccount, AToken, '/rest/api/2/myself');
@@ -564,6 +589,9 @@ begin
     end;
   AItems := AItems + [AItem];
 end;
+
+{$I Vigia.Providers.GitLab.inc}
+{$I Vigia.Providers.Azure.inc}
 
 procedure GitHubSearch(const AAccount: TAccount; const AToken, AQuery: string;
   ASource: TItemSource; var AItems: TItems; APages: Integer = MaxPages);
@@ -995,25 +1023,39 @@ begin
   Result := ApplyRepoFilter(AAccount, Result);
 end;
 
-function NormalizeManualKey(const AKey: string; out AIsGitHub: Boolean): string;
+function NormalizeManualKey(const AKey: string; out AFamily: TKeyFamily): string;
 var
   K: string;
 begin
   K := AKey.Trim;
-  AIsGitHub := TRegEx.IsMatch(K, '^[^/\s]+/[^#\s]+#\d+$');
-  if AIsGitHub then
-    Result := K
+  Result := K;
+  // GitLab aceita subgrupos (a/b/c#12) e MR com '!'.
+  if TRegEx.IsMatch(K, '^[^/\s]+(/[^/#!\s]+)+[#!]\d+$') then
+    AFamily := kfRepo
   else if TRegEx.IsMatch(K, '^[A-Za-z][A-Za-z0-9_]*-\d+$') then
-    Result := K.ToUpper
+  begin
+    AFamily := kfJira;
+    Result := K.ToUpper;
+  end
+  else if TRegEx.IsMatch(K, '^[^/#!]+#\d+$') then
+    AFamily := kfAzure
   else
+  begin
+    AFamily := kfNone;
     Result := '';
+  end;
 end;
 
 function CheckItem(const AAccount: TAccount; const AToken, AKey: string): string;
 var
   M: TMatch;
   J: TJSONValue;
+  Desc: string;
 begin
+  case AAccount.Kind of
+    pkGitLab: Exit(GitLabTitle(AAccount, AToken, AKey));
+    pkAzure: Exit(AzureTitleAndDescription(AAccount, AToken, AKey, Desc));
+  end;
   if AAccount.Kind = pkGitHub then
   begin
     M := TRegEx.Match(AKey, '^([^/\s]+/[^#\s]+)#(\d+)$');
@@ -1138,6 +1180,10 @@ var
   Dummy: Boolean;
 begin
   Result := nil;
+  case AAccount.Kind of
+    pkGitLab: Exit(GitLabComments(AAccount, AToken, AKey, AMax));
+    pkAzure: Exit(AzureComments(AAccount, AToken, AKey, AMax));
+  end;
   if AAccount.Kind = pkGitHub then
   begin
     M := TRegEx.Match(AKey, '^([^/\s]+/[^#\s]+)#(\d+)$');
@@ -1206,6 +1252,32 @@ var
   State: string;
 begin
   Result := nil;
+  if AAccount.Kind = pkAzure then
+    Exit(AzureTransitions(AAccount, AToken, AKey));
+  if AAccount.Kind = pkGitLab then
+  begin
+    J := GetJson(AAccount, AToken, GitLabItemPath(AKey));
+    try
+      State := J.GetValue<string>('state', 'opened');
+    finally
+      J.Free;
+    end;
+    T := Default(TTransition);
+    if State = 'opened' then
+    begin
+      T.Id := 'close';
+      T.Name := 'Fechar';
+      T.ToStatus := 'closed';
+    end
+    else
+    begin
+      T.Id := 'reopen';
+      T.Name := 'Reabrir';
+      T.ToStatus := 'open';
+    end;
+    Result := [T];
+    Exit;
+  end;
   if AAccount.Kind = pkGitHub then
   begin
     J := GetJson(AAccount, AToken, GitHubIssuePath(AKey));
@@ -1277,6 +1349,19 @@ var
   Body: TJSONObject;
   Adf: string;
 begin
+  case AAccount.Kind of
+    pkGitLab:
+      begin
+        SendJson(AAccount, AToken, 'POST', GitLabItemPath(AKey) + '/notes',
+          Format('{"body":%s}', [TJSONString.Create(AText).ToJSON]));
+        Exit;
+      end;
+    pkAzure:
+      begin
+        AzurePostComment(AAccount, AToken, AKey, AText);
+        Exit;
+      end;
+  end;
   Body := TJSONObject.Create;
   try
     if AAccount.Kind = pkJiraCloud then
@@ -1305,8 +1390,15 @@ var
   Offset: Integer;
   Started: string;
 begin
-  if AAccount.Kind = pkGitHub then
-    raise Exception.Create('GitHub não tem registro de horas');
+  if AAccount.Kind = pkGitLab then
+  begin
+    GitLabAddSpent(AAccount, AToken, AKey, AHours);
+    if AComment.Trim <> '' then
+      PostComment(AAccount, AToken, AKey, Format('Tempo: %.1fh. %s', [AHours, AComment.Trim]));
+    Exit;
+  end;
+  if not (AAccount.Kind in WorklogKinds) then
+    raise Exception.Create(ShortProviderNames[AAccount.Kind] + ' não tem registro de horas pelo Vigia');
   // Jira quer "2026-10-02T09:00:00.000-0300" (fuso sem dois-pontos).
   Offset := Round(TTimeZone.Local.GetUtcOffset(AStarted).TotalMinutes);
   Started := FormatDateTime('yyyy"-"mm"-"dd"T"hh":"nn":"ss".000"', AStarted) +
@@ -1327,7 +1419,11 @@ end;
 procedure ApplyTransition(const AAccount: TAccount; const AToken, AKey: string;
   const ATransition: TTransition);
 begin
-  if AAccount.Kind = pkGitHub then
+  if AAccount.Kind = pkGitLab then
+    SendJson(AAccount, AToken, 'PUT', GitLabItemPath(AKey), Format('{"state_event":"%s"}', [ATransition.Id]))
+  else if AAccount.Kind = pkAzure then
+    AzurePatch(AAccount, AToken, AzureId(AKey), 'System.State', ATransition.Id)
+  else if AAccount.Kind = pkGitHub then
     SendJson(AAccount, AToken, 'PATCH', GitHubIssuePath(AKey),
       Format('{"state":"%s"}', [ATransition.Id]))
   else
@@ -1350,7 +1446,7 @@ var
   Arr: TJSONArray;
   Num: Double;
 begin
-  if (AAccount.Kind = pkGitHub) or (AValues = nil) then
+  if not (AAccount.Kind in JiraKinds) or (AValues = nil) then
   begin
     ApplyTransition(AAccount, AToken, AKey, ATransition);
     Exit;
@@ -1404,12 +1500,21 @@ begin
     pkJiraCloud:
       SendJson(AAccount, AToken, 'PUT', Format('%s/issue/%s/assignee', [JiraApi(AAccount), Enc(AKey)]),
         Format('{"accountId":%s}', [TJSONString.Create(Me.Id).ToJSON]));
+    pkGitLab:
+      GitLabAssignToMe(AAccount, AToken, AKey);
+    pkAzure:
+      AzurePatch(AAccount, AToken, AzureId(AKey), 'System.AssignedTo', Me.Id);
   end;
 end;
 
 procedure AddLabel(const AAccount: TAccount; const AToken, AKey, ALabel: string);
 begin
-  if AAccount.Kind = pkGitHub then
+  if AAccount.Kind = pkGitLab then
+    SendJson(AAccount, AToken, 'PUT', GitLabItemPath(AKey),
+      Format('{"add_labels":%s}', [TJSONString.Create(ALabel.Trim).ToJSON]))
+  else if AAccount.Kind = pkAzure then
+    AzureAddTag(AAccount, AToken, AKey, ALabel)
+  else if AAccount.Kind = pkGitHub then
     SendJson(AAccount, AToken, 'POST', GitHubIssuePath(AKey) + '/labels',
       Format('{"labels":[%s]}', [TJSONString.Create(ALabel.Trim).ToJSON]))
   else
@@ -1419,8 +1524,13 @@ end;
 
 procedure ApprovePr(const AAccount: TAccount; const AToken, AKey: string);
 begin
+  if AAccount.Kind = pkGitLab then
+  begin
+    SendJson(AAccount, AToken, 'POST', GitLabItemPath(AKey) + '/approve', '{}');
+    Exit;
+  end;
   if AAccount.Kind <> pkGitHub then
-    raise Exception.Create('Só PR do GitHub');
+    raise Exception.Create('Aprovar só vale para PR do GitHub ou MR do GitLab');
   SendJson(AAccount, AToken, 'POST', GitHubIssuePath(AKey).Replace('/issues/', '/pulls/') + '/reviews',
     '{"event":"APPROVE"}');
 end;
@@ -1487,6 +1597,10 @@ var
   R: TJSONValue;
   Adf: string;
 begin
+  case AAccount.Kind of
+    pkGitLab: Exit(GitLabCreate(AAccount, AToken, AWhere, ATitle, ABody));
+    pkAzure: Exit(AzureCreate(AAccount, AToken, AWhere, ATitle, ABody));
+  end;
   Body := TJSONObject.Create;
   try
     if AAccount.Kind = pkGitHub then
@@ -1540,6 +1654,16 @@ var
   Other: string;
 begin
   Result := Default(TIssueInfo);
+  if AAccount.Kind = pkGitLab then
+  begin
+    Result.Description := GitLabDescription(AAccount, AToken, AKey);
+    Exit;
+  end;
+  if AAccount.Kind = pkAzure then
+  begin
+    AzureTitleAndDescription(AAccount, AToken, AKey, Result.Description);
+    Exit;
+  end;
   if AAccount.Kind = pkGitHub then
   begin
     J := GetJson(AAccount, AToken, GitHubIssuePath(AKey));
@@ -1600,7 +1724,7 @@ var
 begin
   AToday := 0;
   AWeek := 0;
-  if AAccount.Kind = pkGitHub then
+  if not (AAccount.Kind in JiraKinds) then
     Exit;
   Me := WhoAmI(AAccount, AToken);
   WeekStart := StartOfTheWeek(Date);  // segunda-feira
@@ -1661,10 +1785,13 @@ begin
     raise Exception.Create('Token não encontrado no Credential Manager');
   AMe := Default(TIdentity);
   // GitHub dispensa o "quem sou eu": notification nunca vem de ação minha.
-  if AAccount.Kind = pkGitHub then
-    Result := FetchGitHub(AAccount, AToken, AManualKeys)
+  case AAccount.Kind of
+    pkGitHub: Result := FetchGitHub(AAccount, AToken, AManualKeys);
+    pkGitLab: Result := FetchGitLab(AAccount, AToken, AManualKeys, AMe);
+    pkAzure: Result := FetchAzure(AAccount, AToken, AManualKeys, AMe);
   else
     Result := FetchJira(AAccount, AToken, AManualKeys, AMe);
+  end;
 end;
 
 initialization

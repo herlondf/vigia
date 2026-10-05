@@ -14,22 +14,25 @@
   <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows" alt="Windows 10 and 11">
   <img src="https://img.shields.io/badge/Delphi-VCL%20%2B%20Skia-E62431" alt="Delphi VCL + Skia">
   <img src="https://img.shields.io/badge/install-no%20admin-22c55e" alt="No admin install">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
 </p>
 
 <p align="center">
   <img src="docs/images/dashboard.png" width="820" alt="Vigia dashboard">
 </p>
 
-> The app UI is in Brazilian Portuguese. Screenshots below show it as is.
+> The app UI is available in English and Brazilian Portuguese. The screenshots below show the Portuguese version.
 
 ---
 
 ## Why
 
-- **One place.** GitHub, Jira Server/DC and Jira Cloud, as many accounts as you need.
+- **One place.** GitHub, GitLab, Jira Server/DC, Jira Cloud and Azure DevOps, as many accounts as you need.
 - **Alerts that matter.** Assigned, comment, mention, status, due date, review, PR approved, red CI. You choose per account.
 - **Act right there.** Comment, log work, change status, assign, flag an impediment. Always with confirmation.
 - **AI assistant.** Ask "what is due this week?" or say "log 2h on PROJ-1".
+- **At your pace.** "Now" filter, always-on-top mini window, Win+Alt+V and replying right from the alert.
+- **English or Portuguese.** The UI follows Windows, or you pick.
 - **Always current.** Tells you when a new version is out and updates itself in one click.
 - **Safe.** Tokens live in the Windows Credential Manager. Never in files or the database.
 

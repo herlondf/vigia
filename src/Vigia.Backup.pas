@@ -29,6 +29,7 @@ function UnprotectText(const ABase64: string): string;
 implementation
 
 uses
+  Vigia.I18n,
   Winapi.Windows,
   System.SysUtils,
   System.Classes,
@@ -118,9 +119,9 @@ end;
 
 function TBackupResult.Summary: string;
 begin
-  Result := Format('%d conta(s), %d tag(s), %d configuração(ões).', [Accounts, Tags, Settings]);
+  Result := Format(Tr('%d conta(s), %d tag(s), %d configuração(ões).'), [Accounts, Tags, Settings]);
   if TokensMissing > 0 then
-    Result := Result + Format(' %d token(s) não vieram: edite a conta e cole de novo.', [TokensMissing]);
+    Result := Result + Format(Tr(' %d token(s) não vieram: edite a conta e cole de novo.'), [TokensMissing]);
 end;
 
 function IsAiTarget(const ATarget: string): Boolean;
@@ -252,7 +253,7 @@ begin
   if not (Root is TJSONObject) or (Root.GetValue<Integer>('vigia_backup', 0) <> BackupFormat) then
   begin
     Root.Free;
-    raise Exception.Create('Arquivo não é um backup do Vigia');
+    raise Exception.Create(Tr('Arquivo não é um backup do Vigia'));
   end;
   Ids := TDictionary<string, Integer>.Create;
   try

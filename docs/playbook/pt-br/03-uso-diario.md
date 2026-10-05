@@ -26,9 +26,9 @@ Números e gráficos para decidir por onde começar: acompanhadas, comigo, prazo
 
 ## Issues
 
-- **Filtros** (somam entre si): Comigo, Atrasadas, Review, Manuais, Impedidas, Meus PRs e Sprint (Jira com sprint ativa).
+- **Filtros** (somam entre si): **Agora** (o que pede ação hoje: vence hoje ou venceu, menção, review pedido, PR com CI vermelho ou mudanças pedidas, issue sua impedida), Comigo, Atrasadas, Review, Manuais, Impedidas, Meus PRs e Sprint (Jira com sprint ativa).
 - **Tags**: suas tags aparecem como chips. Somam entre si e filtram junto com os filtros.
-- **Agrupar**: separa a lista por repositório (GitHub) ou projeto (Jira). Clique no cabeçalho do grupo para recolher.
+- **Agrupar** (à direita, na linha das tags): separa a lista por repositório (GitHub) ou projeto (Jira). Clique no cabeçalho do grupo para recolher.
 - Lista vazia mostra os filtros ligados e um botão para limpar.
 
 Cada linha mostra chave, título, selos (status, prazo, impedida, tags) e, à direita, o vínculo (comigo, review, meu PR...) e a última atualização.
@@ -50,16 +50,20 @@ Clique numa issue para abrir o painel à direita.
 | Ver detalhes | Abre o painel |
 | Mudar status... | Lista os status possíveis agora. Se a transição pede campos (ex.: Resolução), eles aparecem na tela |
 | Abrir no navegador / Copiar chave | O nome diz |
-| **Ações ›** | Atribuir a mim, Adicionar label, Aprovar PR, Abrir job que falhou. No Jira: Registrar horas, Mudar prioridade, Marcar/Tirar impedimento (o motivo vira comentário) |
+| **Ações ›** | Atribuir a mim, Triar com IA, Aplicar sugestão da IA, Adicionar label (tag no Azure), Aprovar PR/MR, Abrir job que falhou. Jira e GitLab: Registrar horas. Jira: Mudar prioridade, Marcar/Tirar impedimento (o motivo vira comentário) |
 | Silenciar até amanhã / até mudar status | Para os avisos desta issue (ver [Avisos](04-avisos.md)) |
 | Tag › | Marca ou desmarca a issue numa tag, ou abre **Gerenciar tags** |
 | Parar de acompanhar | Só nas issues acompanhadas à mão |
 
 **Toda ação que grava no Jira ou no GitHub pede confirmação antes.**
 
+## Janela mini
+
+Botão direito no ícone da bandeja › **Janela mini**. Fica sempre por cima, com os números (Agora, Atrasadas, Comigo) e a lista "Agora". Clique numa linha para abrir a issue; arraste pelo topo para mover.
+
 ## Acompanhar uma issue que não é sua
 
-`Ctrl+K`, digite `PROJ-123` (Jira) ou `dono/repo#12` (GitHub) e escolha **Acompanhar**. O Vigia confere se ela existe antes de salvar.
+`Ctrl+K`, digite `PROJ-123` (Jira), `dono/repo#12` (GitHub ou GitLab, `!5` para MR) ou `Projeto#123` (Azure DevOps) e escolha **Acompanhar**. O Vigia confere se ela existe antes de salvar.
 
 ## Tags
 

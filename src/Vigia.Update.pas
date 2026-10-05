@@ -35,6 +35,7 @@ procedure RunInstaller(const APath: string; AShow: Boolean);
 implementation
 
 uses
+  Vigia.I18n,
   Winapi.Windows,
   Winapi.ShellAPI,
   System.SysUtils,
@@ -101,7 +102,7 @@ begin
     if Resp.StatusCode = 404 then
       Exit(False);  // ainda sem release
     if Resp.StatusCode <> 200 then
-      raise Exception.CreateFmt('GitHub respondeu %d', [Resp.StatusCode]);
+      raise Exception.CreateFmt(Tr('GitHub respondeu %d'), [Resp.StatusCode]);
     J := TJSONObject.ParseJSONValue(Resp.ContentAsString(TEncoding.UTF8));
   finally
     Http.Free;
@@ -133,14 +134,14 @@ var
 begin
   // Sem hash não instala: o arquivo poderia ser qualquer coisa.
   if AInfo.Sha256 = '' then
-    raise Exception.Create('A release não informa o hash do instalador');
+    raise Exception.Create(Tr('A release não informa o hash do instalador'));
   Result := TPath.Combine(TPath.GetTempPath, Format('Vigia-Setup-%s.exe', [AInfo.Version]));
   Http := NewClient;
   F := TFileStream.Create(Result, fmCreate);
   try
     Resp := Http.Get(AInfo.Url, F);
     if Resp.StatusCode <> 200 then
-      raise Exception.CreateFmt('Download respondeu %d', [Resp.StatusCode]);
+      raise Exception.CreateFmt(Tr('Download respondeu %d'), [Resp.StatusCode]);
   finally
     F.Free;
     Http.Free;
@@ -148,7 +149,7 @@ begin
   if not SameText(THashSHA2.GetHashStringFromFile(Result), AInfo.Sha256) then
   begin
     TFile.Delete(Result);
-    raise Exception.Create('O instalador baixado não confere com o hash da release');
+    raise Exception.Create(Tr('O instalador baixado não confere com o hash da release'));
   end;
 end;
 

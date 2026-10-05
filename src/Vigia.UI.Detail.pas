@@ -38,6 +38,7 @@ type
     FCommentCount: Integer;
     FSeen: array[0..2] of Boolean;  // aba já aberta nesta issue: sem contador
     FCi: TUILabel;                  // PR: job que falhou (clique abre)
+    FTriage: TUILabel;              // sugestão da triagem da IA
     FDetails: TUILabel;             // descrição, anexos e links
     FDetailsLoaded: Boolean;
     FLoadSeq: Integer;              // descarta resposta de uma busca antiga
@@ -63,6 +64,7 @@ type
     procedure ClearBubbles;
     procedure LoadComments;
     procedure LoadDetails;
+    procedure ShowTriage;
     procedure AiSummaryClick(Sender: TObject);
     procedure CiClick(Sender: TObject);
     procedure Relayout;
@@ -85,6 +87,7 @@ type
 implementation
 
 uses
+  Vigia.I18n,
   System.SysUtils,
   System.StrUtils,
   System.DateUtils,
@@ -107,7 +110,8 @@ uses
   Vigia.Providers,
   Vigia.UI.Common,
   Vigia.UI.Views,
-  Vigia.AI;
+  Vigia.AI,
+  System.JSON;
 
 const
   CPad = 16;
@@ -126,11 +130,11 @@ const
 function StatusTip(const ACategory: string): string;
 begin
   if ACategory = 'indeterminate' then
-    Result := 'Em andamento: alguém está trabalhando nela.'
+    Result := Tr('Em andamento: alguém está trabalhando nela.')
   else if ACategory = 'done' then
-    Result := 'Concluída.'
+    Result := Tr('Concluída.')
   else
-    Result := 'Ainda não começou (a fazer).';
+    Result := Tr('Ainda não começou (a fazer).');
 end;
 
 function DueTip(ADue: TDateTime; const AAccount: TAccount): string;
@@ -139,12 +143,12 @@ var
 begin
   Left := Trunc(DateOf(ADue) - Date);
   if Left < 0 then
-    Result := Format('Venceu há %d dia(s).', [-Left])
+    Result := Format(Tr('Venceu há %d dia(s).'), [-Left])
   else if Left = 0 then
-    Result := 'Vence hoje.'
+    Result := Tr('Vence hoje.')
   else
-    Result := Format('Faltam %d dia(s).', [Left]);
-  Result := Result + Format(' Fica laranja com %d e vermelho com %d dias.',
+    Result := Format(Tr('Faltam %d dia(s).'), [Left]);
+  Result := Result + Format(Tr(' Fica laranja com %d e vermelho com %d dias.'),
     [AAccount.WarnDays, AAccount.CriticalDays]);
 end;
 
@@ -187,10 +191,10 @@ begin
   Head.Padding.SetBounds(CPad, CGap, CGap, 0);
   Head.Align := alTop;
   Head.Parent := Self;
-  FAiBtn := NewIconButton(Head, CSvgSpark, 'Resumir a conversa e sugerir resposta (IA)', AiSummaryClick);
-  FTimeBtn := NewIconButton(Head, CSvgClock, 'Registrar tempo', TimeClick);
-  NewIconButton(Head, CSvgOpen, 'Abrir no navegador', OpenClick);
-  NewIconButton(Head, CSvgClose, 'Fechar (Esc)', CloseClick);
+  FAiBtn := NewIconButton(Head, CSvgSpark, Tr('Resumir a conversa e sugerir resposta (IA)'), AiSummaryClick);
+  FTimeBtn := NewIconButton(Head, CSvgClock, Tr('Registrar tempo'), TimeClick);
+  NewIconButton(Head, CSvgOpen, Tr('Abrir no navegador'), OpenClick);
+  NewIconButton(Head, CSvgClose, Tr('Fechar (Esc)'), CloseClick);
   Crumbs := TPanel.Create(Self);
   Crumbs.BevelOuter := bvNone;
   Crumbs.ParentBackground := False;
@@ -214,7 +218,7 @@ begin
   FCompose.Parent := Self;
   FCompose.OnResize := ComposeResize;
   FCommentBox := TUITextArea.Create(Self);
-  FCommentBox.LabelText := 'Escrever um comentário';
+  FCommentBox.LabelText := Tr('Escrever um comentário');
   FCommentBox.Rows := 3;
   FCommentBox.Align := alClient;
   FCommentBox.Parent := FCompose;
@@ -223,7 +227,7 @@ begin
   FCommentBtn.Variant := TUIButtonVariant.bvSoft;
   FCommentBtn.IconSvg := CSvgSend;
   FCommentBtn.CornerRadius := CSendSize / 2;
-  FCommentBtn.Hint := 'Comentar';
+  FCommentBtn.Hint := Tr('Comentar');
   FCommentBtn.ShowHint := True;
   FCommentBtn.OnClick := CommentClick;
   FCommentBtn.SetBounds(0, 0, CSendSize, CSendSize);
@@ -257,6 +261,13 @@ begin
   FCi.Cursor := crHandPoint;
   FCi.OnClick := CiClick;
   FCi.Parent := Inner;
+
+  FTriage := TUILabel.Create(Self);
+  FTriage.Variant := lvMuted;
+  FTriage.FontSize := HintFontSize;
+  FTriage.Italic := True;
+  FTriage.AutoSize := False;
+  FTriage.Parent := Inner;
 
   FTabs := TUITabs.Create(Self);
   FTabs.Parent := Inner;
@@ -317,9 +328,9 @@ begin
   FTabs.RemoveTab(1);
   FTabs.RemoveTab(0);
   FSeen[FTab] := True;
-  FTabs.AddTab('Comentários', IfThen(FSeen[0], 0, FCommentCount));
-  FTabs.AddTab('Histórico', IfThen(FSeen[1], 0, FEventCount));
-  FTabs.AddTab('Detalhes', 0);
+  FTabs.AddTab(Tr('Comentários'), IfThen(FSeen[0], 0, FCommentCount));
+  FTabs.AddTab(Tr('Histórico'), IfThen(FSeen[1], 0, FEventCount));
+  FTabs.AddTab(Tr('Detalhes'), 0);
   FTabs.ActiveIndex := FTab;
   FTabs.OnChange := TabChange;
 end;
@@ -387,43 +398,44 @@ begin
     FBadgeRow.Controls[0].Free;
   AddBadge(AItem.Status, StatusTone(AItem.StatusCategory), StatusTip(AItem.StatusCategory));
   if AItem.Flagged then
-    AddBadge('Impedida', btError, 'Marcada com Flagged no Jira: alguém sinalizou um impedimento.');
+    AddBadge(Tr('Impedida'), btError, Tr('Marcada com Flagged no Jira: alguém sinalizou um impedimento.'));
   if AItem.DueDate > 0 then
-    AddBadge('Entrega ' + FormatDateTime('dd/mm/yyyy', AItem.DueDate), DueTone(AItem.DueDate, AAccount),
+    AddBadge(Tr('Entrega ') + FormatDateTime('dd/mm/yyyy', AItem.DueDate), DueTone(AItem.DueDate, AAccount),
       DueTip(AItem.DueDate, AAccount));
   // alRight reordena pelo Left na hora de mostrar: entre a IA e o abrir.
   FTimeBtn.Left := FAiBtn.Left + FAiBtn.Width - 1;
-  FTimeBtn.Visible := AAccount.Kind <> pkGitHub;
+  FTimeBtn.Visible := AAccount.Kind in WorklogKinds;
   FCommentBox.Value := '';
 
   // Data de atualização já aparece na lista.
-  FInfo.Caption := IfThen(AItem.Assignee <> '', 'Responsável: ' + AItem.Assignee, 'Sem responsável');
+  FInfo.Caption := IfThen(AItem.Assignee <> '', Tr('Responsável: ') + AItem.Assignee, Tr('Sem responsável'));
   if AItem.Reviewers <> '' then
     FInfo.Caption := FInfo.Caption + '  ·  ' + AItem.Reviewers;
   FCi.Visible := AItem.CiState <> '';
   if SameText(AItem.CiState, 'FAILURE') or SameText(AItem.CiState, 'ERROR') then
   begin
-    FCi.Caption := '✕ CI falhou' + IfThen(AItem.CiDetail <> '', ': ' + AItem.CiDetail, '') +
-      IfThen(AItem.CiUrl <> '', '  (abrir)', '');
+    FCi.Caption := Tr('✕ CI falhou') + IfThen(AItem.CiDetail <> '', ': ' + AItem.CiDetail, '') +
+      IfThen(AItem.CiUrl <> '', Tr('  (abrir)'), '');
     FCi.Color := UITheme.Tokens.Color.Error;
   end
   else if SameText(AItem.CiState, 'SUCCESS') then
   begin
-    FCi.Caption := '✓ CI passou';
+    FCi.Caption := Tr('✓ CI passou');
     FCi.Color := UITheme.Tokens.Color.Success;
   end
   else
   begin
-    FCi.Caption := 'CI rodando';
+    FCi.Caption := Tr('CI rodando');
     FCi.Color := UITheme.Tokens.Color.FGMuted;
   end;
   FDetailsLoaded := False;
   FDetails.Caption := '';
+  ShowTriage;
 
   FTimeline.ClearEvents;
   Events := Store.ListEvents(AItem.AccountId, AItem.Key);
   for E in Events do
-    FTimeline.AddEvent(FormatDateTime('dd/mm hh:nn', E.At), EventNames[E.Kind], E.Body, '',
+    FTimeline.AddEvent(FormatDateTime('dd/mm hh:nn', E.At), Tr(EventNames[E.Kind]), E.Body, '',
       EventTone(E.Kind));
   FEventCount := Length(Events);
   FCommentCount := 0;
@@ -449,17 +461,17 @@ var
 begin
   if FComments = nil then
   begin
-    TUIToastManager.Show('Sem comentários para resumir', ttInfo);
+    TUIToastManager.Show(Tr('Sem comentários para resumir'), ttInfo);
     Exit;
   end;
-  Txt := 'Issue ' + FItem.Key + ': ' + FItem.Title + sLineBreak;
+  Txt := Tr('Issue ') + FItem.Key + ': ' + FItem.Title + sLineBreak;
   for C in FComments do
     Txt := Txt + Format('[%s] %s: %s', [FormatDateTime('dd/mm hh:nn', C.At), C.Author, C.Text]) + sLineBreak;
   Key := FItem.Key;
   FAiBtn.Loading := True;
-  AiAsk('Você ajuda a acompanhar issues. Responda em português, sem markdown, exatamente neste formato:' +
-    sLineBreak + 'RESUMO: até 3 frases sobre o estado da conversa e o que estão esperando do usuário.' +
-    sLineBreak + 'RESPOSTA: um rascunho curto de resposta, em primeira pessoa, no tom da conversa.',
+  AiAsk(Tr('Você ajuda a acompanhar issues. Responda em português, sem markdown, exatamente neste formato:') +
+    sLineBreak + Tr('RESUMO: até 3 frases sobre o estado da conversa e o que estão esperando do usuário.') +
+    sLineBreak + Tr('RESPOSTA: um rascunho curto de resposta, em primeira pessoa, no tom da conversa.'),
     Txt, False,
     procedure(AText: string)
     var
@@ -470,13 +482,13 @@ begin
       FAiBtn.Loading := False;
       if not SameText(FItem.Key, Key) then
         Exit;
-      I := Pos('RESPOSTA:', AText);
+      I := Pos(Tr('RESPOSTA:'), AText);
       if I > 0 then
       begin
-        FCommentBox.Value := Trim(Copy(AText, I + Length('RESPOSTA:'), MaxInt));
+        FCommentBox.Value := Trim(Copy(AText, I + Length(Tr('RESPOSTA:')), MaxInt));
         AText := Copy(AText, 1, I - 1);
       end;
-      FCommentsLabel.Caption := Trim(StringReplace(AText, 'RESUMO:', 'Resumo (IA):', []));
+      FCommentsLabel.Caption := Trim(StringReplace(AText, Tr('RESUMO:'), Tr('Resumo (IA):'), []));
       FTab := 0;
       UpdateTabs;
       FScroll.ScrollTo(0, 0);
@@ -487,8 +499,29 @@ begin
       if csDestroying in ComponentState then
         Exit;
       FAiBtn.Loading := False;
-      TUIToastManager.Show('IA: ' + AErr, ttError, 6000);
+      TUIToastManager.Show(Tr('IA: ') + AErr, ttError, 6000);
     end);
+end;
+
+procedure TDetailPanel.ShowTriage;
+var
+  J: TJSONValue;
+  Tag: string;
+begin
+  FTriage.Visible := False;
+  J := TJSONObject.ParseJSONValue(Store.GetSetting(TriageSettingName(FItem.AccountId, FItem.Key)));
+  try
+    if not (J is TJSONObject) then
+      Exit;
+    Tag := J.GetValue<string>('tag', '').TrimLeft(['#']).Trim;
+    FTriage.Caption := Tr('IA sugere: ') + IfThen(Tag <> '', '#' + Tag + ' · ', '') +
+      J.GetValue<string>('prioridade', '') + ' · ' + J.GetValue<string>('motivo', '');
+    FTriage.Hint := Tr('Aplicar: botão direito na issue › Ações › Aplicar sugestão da IA');
+    FTriage.ShowHint := True;
+    FTriage.Visible := True;
+  finally
+    J.Free;
+  end;
 end;
 
 procedure TDetailPanel.CiClick(Sender: TObject);
@@ -506,7 +539,7 @@ begin
   FDetailsLoaded := True;
   A := FAccount;
   Key := FItem.Key;
-  FDetails.Caption := 'Carregando...';
+  FDetails.Caption := Tr('Carregando...');
   TTask.Run(
     procedure
     var
@@ -517,22 +550,22 @@ begin
     begin
       try
         Info := FetchIssueInfo(A, LoadSecret(A.SecretTarget), Key);
-        Txt := IfThen(Info.Description.Trim <> '', Info.Description.Trim, 'Sem descrição.');
+        Txt := IfThen(Info.Description.Trim <> '', Info.Description.Trim, Tr('Sem descrição.'));
         if Info.Attachments <> nil then
         begin
-          Txt := Txt + sLineBreak + sLineBreak + 'Anexos';
+          Txt := Txt + sLineBreak + sLineBreak + Tr('Anexos');
           for At in Info.Attachments do
-            Txt := Txt + sLineBreak + Format('• %s (%d KB)', [At.Name, (At.Size + 1023) div 1024]);
+            Txt := Txt + sLineBreak + Format(Tr('• %s (%d KB)'), [At.Name, (At.Size + 1023) div 1024]);
         end;
         if Info.Links <> nil then
         begin
-          Txt := Txt + sLineBreak + sLineBreak + 'Ligações';
+          Txt := Txt + sLineBreak + sLineBreak + Tr('Ligações');
           for L in Info.Links do
             Txt := Txt + sLineBreak + Format('• %s %s: %s', [L.Kind, L.Key, L.Summary]);
         end;
       except
         on E: Exception do
-          Txt := 'Não deu para buscar os detalhes: ' + E.Message;
+          Txt := Tr('Não deu para buscar os detalhes: ') + E.Message;
       end;
       TThread.Queue(nil,
         procedure
@@ -583,9 +616,9 @@ begin
             Exit;
           FLoading.Visible := False;
           if Err <> '' then
-            FCommentsLabel.Caption := 'Não deu para buscar os comentários: ' + Err
+            FCommentsLabel.Caption := Tr('Não deu para buscar os comentários: ') + Err
           else if Comments = nil then
-            FCommentsLabel.Caption := 'Ninguém comentou ainda.'
+            FCommentsLabel.Caption := Tr('Ninguém comentou ainda.')
           else
             FCommentsLabel.Caption := '';
           // Lista de leitura, não chat: todos à esquerda, cor neutra.
@@ -597,7 +630,7 @@ begin
             B.AvatarInitials := Initials(C.Author);
             if SameText(C.AuthorId, Me.Id) then
             begin
-              B.AuthorName := 'Você';
+              B.AuthorName := Tr('Você');
               B.AvatarColor := UITheme.Tokens.Color.Primary;
             end
             else
@@ -642,6 +675,11 @@ begin
     FCi.SetBounds(CPad, Y, W, 20);
     Inc(Y, 20 + CGap);
   end;
+  if FTriage.Visible then
+  begin
+    FTriage.SetBounds(CPad, Y, W, 18);
+    Inc(Y, 18 + CGap);
+  end;
   FTabs.SetBounds(CPad, Y, W, FTabs.Height);
   Inc(Y, FTabs.Height + CGap * 2);
 
@@ -658,7 +696,7 @@ begin
   FCommentsLabel.Visible := (Comments and (FCommentsLabel.Caption <> '')) or
     ((FTab = 1) and (FEventCount = 0));
   if (FTab = 1) and (FEventCount = 0) then
-    FCommentsLabel.Caption := 'Nenhum aviso desta issue ainda.';
+    FCommentsLabel.Caption := Tr('Nenhum aviso desta issue ainda.');
   FLoading.Visible := FLoading.Visible and Comments;
   for I := 0 to FBubbles.Count - 1 do
     TUIChatBubble(FBubbles[I]).Visible := Comments;
@@ -707,7 +745,7 @@ begin
   Text := FCommentBox.Value.Trim;
   if Text = '' then
   begin
-    TUIToastManager.Show('Escreva o comentário antes', ttWarning);
+    TUIToastManager.Show(Tr('Escreva o comentário antes'), ttWarning);
     Exit;
   end;
   A := FAccount;
@@ -733,10 +771,10 @@ begin
           FCommentBtn.Loading := False;
           if Err <> '' then
           begin
-            TUIToastManager.Show('Não comentou: ' + Err, ttError, 6000);
+            TUIToastManager.Show(Tr('Não comentou: ') + Err, ttError, 6000);
             Exit;
           end;
-          TUIToastManager.Show('Comentário publicado em ' + Key, ttSuccess);
+          TUIToastManager.Show(Tr('Comentário publicado em ') + Key, ttSuccess);
           if SameText(FItem.Key, Key) then
           begin
             FCommentBox.Value := '';

@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.23.0] - 2026-10-05
+### Added
+- GitLab (issues, merge requests, to-dos, pipeline do MR, horas) e Azure DevOps (work items por WIQL: meus, seguidos e menções). Comentar, mudar status, atribuir, label/tag, criar issue e acompanhar à mão nos dois.
+- Filtro "Agora": o que pede ação hoje (vence hoje ou venceu, menção, review pedido, PR com CI vermelho ou mudanças pedidas, issue minha impedida).
+- Janela mini sempre por cima com os contadores e a lista "Agora" (menu da bandeja).
+- Atalho global Win+Alt+V para abrir e esconder o Vigia (Configurações › Geral).
+- Aviso de issue com Silenciar e Responder: o comentário sai do próprio aviso (Enter envia).
+- Triagem com IA: sugere tag e prioridade (automática para issues novas, opcional, ou em Ações › Triar com IA); "Aplicar sugestão" marca a tag e muda a prioridade no Jira.
+- Interface em inglês (Configurações › Geral › Idioma; automático segue o Windows).
+- Licença MIT.
+- Assinatura de código opcional no build (signtool; certificado por variável de ambiente).
+- Teste de tela no CI: sobe o Vigia isolado contra um Jira falso e confere janela, abas, busca e Configurações por UI Automation.
+### Changed
+- "Agrupar" foi para a linha das tags; a dos filtros encheu.
+- Com o painel da issue aberto, o mascote fica à esquerda dele e não cobre o botão de enviar.
+- Tarefas automáticas de IA também aceitam a chave da variável ANTHROPIC_API_KEY.
+### Fixed
+- A roda do mouse mudava campos numéricos ao rolar a página (suíte: `TUINumberInput` só muda com foco).
+- Enter em campo de texto agora avisa o `OnKeyDown` (suíte: `TUIInput`), sem acionar o botão padrão.
+
 ## [0.22.0] - 2026-10-04
 ### Added
 - Backup: Configurações › Backup › Exportar/Importar. Contas, tags, issues acompanhadas à mão e preferências num arquivo `.json`. Tokens vão cifrados (DPAPI do Windows) e voltam sozinhos no mesmo usuário do Windows; em outra máquina a conta pede o token de novo. Importar atualiza a conta de mesmo nome e provedor em vez de duplicar.

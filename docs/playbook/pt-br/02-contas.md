@@ -56,6 +56,31 @@ Crie o token no Jira: **foto do perfil › Perfil › Tokens de acesso pessoal �
 
 Crie o API token em [id.atlassian.com › Segurança › Tokens de API](https://id.atlassian.com/manage-profile/security/api-tokens).
 
+## GitLab
+
+| Campo | Valor |
+|---|---|
+| URL base | `https://gitlab.com` (ou o endereço do GitLab da empresa) |
+| Token de acesso | Personal access token com o escopo `api` (`read_api` se for só ler) |
+
+Crie em **GitLab › Preferences › Access tokens**. O Vigia busca issues atribuídas a você, MRs com seu review pedido, seus MRs (com pipeline) e os to-dos (menções). A chave é `grupo/projeto#12` para issue e `grupo/projeto!5` para MR.
+
+- **Busca extra**: parâmetros da API de issues, ex.: `labels=bug&milestone=Sprint 5`.
+- O prazo vem da data de entrega da issue ou do milestone.
+
+## Azure DevOps
+
+| Campo | Valor |
+|---|---|
+| URL base | `https://dev.azure.com/<organização>` |
+| Token de acesso | PAT com **Work Items (Read & write)** |
+
+Crie em **User settings › Personal access tokens**. O Vigia busca work items atribuídos a você, os que você segue e as menções recentes. A chave é `Projeto#123`.
+
+- **Busca extra**: um trecho de WIQL, ex.: `[System.AreaPath] UNDER 'App\Pagamentos'`.
+- **Campo de prazo**: nome de referência (ex.: `Custom.Prazo`); vazio usa Due Date ou Target Date.
+- Tag `Blocked` aparece como impedida.
+
 ## Opções do Jira (Server e Cloud)
 
 - **Busca extra**: JQL, ex.: `project = ABC AND labels = urgente`.

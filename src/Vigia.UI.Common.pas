@@ -55,6 +55,7 @@ procedure FadeInOnShow(AForm: TForm);
 implementation
 
 uses
+  Vigia.I18n,
   System.Classes,
   UI.Animations,
   System.SysUtils,

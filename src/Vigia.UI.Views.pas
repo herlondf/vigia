@@ -96,6 +96,7 @@ function CategoryOf(const AItem: TItem): string;
 implementation
 
 uses
+  Vigia.I18n,
   System.SysUtils,
   System.StrUtils,
   System.DateUtils,
@@ -206,7 +207,7 @@ procedure TDashboardView.Update(const AItems: TItems; const AAccounts: TArray<TA
     S.NumericValue := AValue;
     S.SubText := ASub;
     S.Tone := ATone;
-    S.Hint := 'Ver na aba Issues';
+    S.Hint := Tr('Ver na aba Issues');
     S.ShowHint := True;
     S.Cursor := crHandPoint;
     TControlAccess(S).OnClick := StatClick;
@@ -292,20 +293,20 @@ begin
   FGrid.RowHeight := 36;
   FGrid.Parent := FScroll.InnerPanel;
 
-  AddStat('abertas', 'Acompanhadas', 0, Length(FItems), 'issues abertas', stNone);
-  AddStat('comigo', 'Comigo', 3, Mine, 'associadas a mim', stPrimary);
+  AddStat('abertas', Tr('Acompanhadas'), 0, Length(FItems), Tr('issues abertas'), stNone);
+  AddStat('comigo', Tr('Comigo'), 3, Mine, Tr('associadas a mim'), stPrimary);
   if GitHubView then
-    AddStat('meusprs', 'Meus PRs', 6, MyPrs, 'abertos por mim', stSuccess)
+    AddStat('meusprs', Tr('Meus PRs'), 6, MyPrs, Tr('abertos por mim'), stSuccess)
   else
-    AddStat('impedidas', 'Impedidas', 6, Flagged, 'com Flagged', stError);
-  AddStat('prazo', 'Prazo perto', 9, Soon, 'laranja ou vermelho', stWarning);
+    AddStat('impedidas', Tr('Impedidas'), 6, Flagged, Tr('com Flagged'), stError);
+  AddStat('prazo', Tr('Prazo perto'), 9, Soon, Tr('laranja ou vermelho'), stWarning);
 
   if GitHubView then
-    W := FGrid.AddWidget('categorias', 'Por tipo', 0, 3, 4, 6)
+    W := FGrid.AddWidget('categorias', Tr('Por tipo'), 0, 3, 4, 6)
   else
-    W := FGrid.AddWidget('categorias', 'Por andamento', 0, 3, 4, 6);
+    W := FGrid.AddWidget('categorias', Tr('Por andamento'), 0, 3, 4, 6);
   if FItems = nil then
-    EmptyNote(W, 'Nenhuma issue nesta visão.')
+    EmptyNote(W, Tr('Nenhuma issue nesta visão.'))
   else
   begin
   Chart := TUIChart.Create(W);
@@ -316,14 +317,14 @@ begin
   Chart.AnimEnabled := True;
   if GitHubView then
   begin
-    Chart.SetSeries(['Issues', 'PRs'],
-      [TUIChartSeries.Create('Itens', [Length(FItems) - PrCount, PrCount])]);
+    Chart.SetSeries([Tr('Issues'), Tr('PRs')],
+      [TUIChartSeries.Create(Tr('Itens'), [Length(FItems) - PrCount, PrCount])]);
     Chart.OnDataPointClick := KindClick;
   end
   else
   begin
-    Chart.SetSeries(['A fazer', 'Em andamento', 'Concluído'],
-      [TUIChartSeries.Create('Issues', [CatCount[0], CatCount[1], CatCount[2]])]);
+    Chart.SetSeries([Tr('A fazer'), Tr('Em andamento'), Tr('Concluído')],
+      [TUIChartSeries.Create(Tr('Issues'), [CatCount[0], CatCount[1], CatCount[2]])]);
     Chart.OnDataPointClick := CategoryClick;
   end;
   Chart.Cursor := crHandPoint;
@@ -340,11 +341,11 @@ begin
       if DueTone(It.DueDate, A) <> btError then
         Inc(OnTime);
     end;
-  W := FGrid.AddWidget('noprazo', 'Entregas no prazo', 4, 3, 3, 6);
+  W := FGrid.AddWidget('noprazo', Tr('Entregas no prazo'), 4, 3, 3, 6);
   if WithDue = 0 then
     // Sem prazo nenhum: nem 100% (enganoso) nem 0% (parece atraso).
-    EmptyNote(W, IfThen(GitHubView, 'Nenhuma issue com milestone com data.',
-      'Nenhuma issue com prazo.'))
+    EmptyNote(W, IfThen(GitHubView, Tr('Nenhuma issue com milestone com data.'),
+      Tr('Nenhuma issue com prazo.')))
   else
   begin
   Ring := TUIRadialProgress.Create(W);
@@ -367,7 +368,7 @@ begin
   Ring.Cursor := crHandPoint;
   TControlAccess(Ring).OnClick := RingClick;
   Lbl := TUILabel.Create(W);
-  Lbl.Caption := Format('%d de %d com prazo', [OnTime, WithDue]);
+  Lbl.Caption := Format(Tr('%d de %d com prazo'), [OnTime, WithDue]);
   Lbl.Variant := lvMuted;
   Lbl.TextAlign := UI.Painter.taCenter;
   Lbl.AutoSize := False;
@@ -395,9 +396,9 @@ begin
         if MatchText(It.CiState, ['FAILURE', 'ERROR']) then
           Inc(CiFail);
       end;
-    W := FGrid.AddWidget('funil', 'Meus PRs', 7, 3, 5, 6);
+    W := FGrid.AddWidget('funil', Tr('Meus PRs'), 7, 3, 5, 6);
     if MyPrs = 0 then
-      EmptyNote(W, 'Nenhum PR seu aberto.')
+      EmptyNote(W, Tr('Nenhum PR seu aberto.'))
     else
     begin
       Chart := TUIChart.Create(W);
@@ -407,11 +408,11 @@ begin
       Chart.ChartType := ctProgress;
       Chart.ShowLegend := False;
       Chart.AnimEnabled := True;
-      Chart.SetSeries(['Em review', 'Mudanças', 'Aprovados', 'CI falhou'],
-        [TUIChartSeries.Create('Em review', [Waiting]),
-         TUIChartSeries.Create('Mudanças', [Changes]),
-         TUIChartSeries.Create('Aprovados', [Approved]),
-         TUIChartSeries.Create('CI falhou', [CiFail])]);
+      Chart.SetSeries([Tr('Em review'), Tr('Mudanças'), Tr('Aprovados'), Tr('CI falhou')],
+        [TUIChartSeries.Create(Tr('Em review'), [Waiting]),
+         TUIChartSeries.Create(Tr('Mudanças'), [Changes]),
+         TUIChartSeries.Create(Tr('Aprovados'), [Approved]),
+         TUIChartSeries.Create(Tr('CI falhou'), [CiFail])]);
       Chart.OnDataPointClick := PrStateClick;
       Chart.Cursor := crHandPoint;
       Chart.Refresh;
@@ -420,7 +421,7 @@ begin
   else
   begin
   // Funil do andamento: quanto já passou de cada etapa.
-  W := FGrid.AddWidget('funil', 'Funil do andamento', 7, 3, 5, 6);
+  W := FGrid.AddWidget('funil', Tr('Funil do andamento'), 7, 3, 5, 6);
   Chart := TUIChart.Create(W);
   Chart.Backend := cbSkia;
   Chart.Parent := W;
@@ -428,8 +429,8 @@ begin
   Chart.ChartType := ctFunnel;
   Chart.ShowLegend := False;
   Chart.AnimEnabled := True;
-  Chart.SetSeries(['Todas', 'Começadas', 'Concluídas'],
-    [TUIChartSeries.Create('Issues', [CatCount[0] + CatCount[1] + CatCount[2],
+  Chart.SetSeries([Tr('Todas'), Tr('Começadas'), Tr('Concluídas')],
+    [TUIChartSeries.Create(Tr('Issues'), [CatCount[0] + CatCount[1] + CatCount[2],
       CatCount[1] + CatCount[2], CatCount[2]])]);
   Chart.OnDataPointClick := FunnelClick;
   Chart.Cursor := crHandPoint;
@@ -456,9 +457,9 @@ begin
         end));
       if Length(FRepoNames) > 10 then
         SetLength(FRepoNames, 10);  // ponytail: top 10; o resto fica no seletor do cabeçalho
-      W := FGrid.AddWidget('status', 'Por repositório', 0, 9, 6, 7);
+      W := FGrid.AddWidget('status', Tr('Por repositório'), 0, 9, 6, 7);
       if FRepoNames = nil then
-        EmptyNote(W, 'Nenhuma issue nesta visão.')
+        EmptyNote(W, Tr('Nenhuma issue nesta visão.'))
       else
       begin
         Chart := TUIChart.Create(W);
@@ -487,7 +488,7 @@ begin
   end
   else
   begin
-  W := FGrid.AddWidget('status', 'Por status', 0, 9, 6, 7);
+  W := FGrid.AddWidget('status', Tr('Por status'), 0, 9, 6, 7);
   Chart := TUIChart.Create(W);
   Chart.Backend := cbSkia;
   Chart.Parent := W;
@@ -507,7 +508,7 @@ begin
   end;
 
   // Pendências por #tag: quanto tem aberto em cada projeto do usuário.
-  W := FGrid.AddWidget('tags', 'Pendências por #tag', 6, 9, 6, 7);
+  W := FGrid.AddWidget('tags', Tr('Pendências por #tag'), 6, 9, 6, 7);
   Tags := nil;
   for var Tg in Store.ListTags do
     if (FAccountFilter = 0) or (Tg.AccountId = FAccountFilter) then
@@ -525,7 +526,7 @@ begin
   if Tags = nil then
   begin
     Lbl := TUILabel.Create(W);
-    Lbl.Caption := 'Crie tags (botão direito numa issue › Tag) para ver as pendências por projeto.';
+    Lbl.Caption := Tr('Crie tags (botão direito numa issue › Tag) para ver as pendências por projeto.');
     Lbl.Variant := lvMuted;
     Lbl.WordWrap := True;
     Lbl.AutoSize := False;
@@ -560,7 +561,7 @@ begin
     begin
       Result := CompareValue(L.DueDate, R.DueDate);
     end));
-  W := FGrid.AddWidget('entregas', 'Próximas entregas', 0, 16, 6, 9);
+  W := FGrid.AddWidget('entregas', Tr('Próximas entregas'), 0, 16, 6, 9);
   List := TUIVirtualList.Create(W);
   List.RowHeight := 52;
   List.OnItemClick := UpcomingClick;
@@ -573,18 +574,18 @@ begin
     V.Subtitle := FormatDateTime('dd/mm/yyyy', It.DueDate) + '  ·  ' + It.Status;
     DaysLeft := Trunc(DateOf(It.DueDate) - Date);
     if DaysLeft < 0 then
-      V.MetaText := Format('vencida há %d d', [-DaysLeft])
+      V.MetaText := Format(Tr('vencida há %d d'), [-DaysLeft])
     else if DaysLeft = 0 then
       V.MetaText := 'hoje'
     else
-      V.MetaText := Format('em %d d', [DaysLeft]);
+      V.MetaText := Format(Tr('em %d d'), [DaysLeft]);
     List.AddItem(V);
   end;
   if FUpcoming = nil then
-    List.AddItem('Nenhuma issue com prazo', 'Configure o campo de entrega na conta, se o Jira usar um.');
+    List.AddItem('Nenhuma issue com prazo', Tr('Configure o campo de entrega na conta, se o Jira usar um.'));
 
   // Atividade recente: avisos das issues que estão na tela (respeita a conta).
-  W := FGrid.AddWidget('atividade-recente', 'Atividade recente', 6, 16, 6, 9);
+  W := FGrid.AddWidget('atividade-recente', Tr('Atividade recente'), 6, 16, 6, 9);
   Recent := TUIVirtualList.Create(W);
   Recent.RowHeight := 52;
   Recent.OnItemClick := RecentClick;
@@ -605,7 +606,7 @@ begin
     if not Known then
       Continue;
     V := Default(TUIVListItem);
-    V.Title := E.Key + '  ·  ' + EventNames[E.Kind];
+    V.Title := E.Key + '  ·  ' + Tr(EventNames[E.Kind]);
     V.Subtitle := E.Body;
     V.MetaText := FormatDateTime('dd/mm hh:nn', E.At);
     Recent.AddItem(V);
@@ -614,7 +615,7 @@ begin
       Break;
   end;
   if Shown = 0 then
-    Recent.AddItem('Sem avisos ainda', 'Mudanças nas issues aparecem aqui.');
+    Recent.AddItem('Sem avisos ainda', Tr('Mudanças nas issues aparecem aqui.'));
   LayoutGrid;
 end;
 
@@ -680,8 +681,8 @@ begin
     FWelcome.Parent := Self;
 
     Hero := TUIHero.Create(Self);
-    Hero.Title := 'Bem-vindo ao Vigia';
-    Hero.Subtitle := 'Suas issues do GitHub e do Jira na bandeja, com aviso do que mudar.';
+    Hero.Title := Tr('Bem-vindo ao Vigia');
+    Hero.Subtitle := Tr('Suas issues do GitHub e do Jira na bandeja, com aviso do que mudar.');
     Hero.UseGradient := True;
     Hero.MinHeight := 180;
     Hero.Height := 200;
@@ -689,9 +690,9 @@ begin
     Hero.Parent := FWelcome;
 
     Steps := TUISteps.Create(Self);
-    Steps.AddStep('Conta', 'GitHub, Jira Server ou Jira Cloud');
-    Steps.AddStep('Testar', 'O Vigia confere o token');
-    Steps.AddStep('Pronto', 'Busca a cada 5 min e avisa');
+    Steps.AddStep(Tr('Conta'), Tr('GitHub, Jira Server ou Jira Cloud'));
+    Steps.AddStep(Tr('Testar'), Tr('O Vigia confere o token'));
+    Steps.AddStep(Tr('Pronto'), Tr('Busca a cada 5 min e avisa'));
     Steps.ActiveStep := 0;
     Steps.Height := 90;
     Steps.AlignWithMargins := True;
@@ -710,7 +711,7 @@ begin
     Row.Top := 2000;
     Row.Align := alTop;
     Btn := TUIButton.Create(Self);
-    Btn.Caption := 'Adicionar a primeira conta';
+    Btn.Caption := Tr('Adicionar a primeira conta');
     Btn.AutoWidth := True;
     Btn.OnClick := WelcomeAddClick;
     Btn.Align := alLeft;
@@ -742,7 +743,7 @@ var
 begin
   Result := FAccounts <> nil;
   for A in FAccounts do
-    if ((FAccountFilter = 0) or (A.Id = FAccountFilter)) and (A.Kind <> pkGitHub) then
+    if ((FAccountFilter = 0) or (A.Id = FAccountFilter)) and not (A.Kind in RepoKinds) then
       Exit(False);
 end;
 
@@ -764,8 +765,8 @@ procedure TDashboardView.KindClick(Sender: TObject; SeriesIndex, DataIndex: Inte
   const Value: Double);
 begin
   case DataIndex of
-    0: Drill(dkKind, 'issue', 'Só issues');
-    1: Drill(dkKind, 'pr', 'Só PRs');
+    0: Drill(dkKind, 'issue', Tr('Só issues'));
+    1: Drill(dkKind, 'pr', Tr('Só PRs'));
   end;
 end;
 
@@ -774,10 +775,10 @@ procedure TDashboardView.PrStateClick(Sender: TObject; SeriesIndex, DataIndex: I
   const Value: Double);
 begin
   case SeriesIndex of
-    0: Drill(dkPrState, 'WAITING', 'Aguardando review');
-    1: Drill(dkPrState, 'CHANGES_REQUESTED', 'Mudanças pedidas');
-    2: Drill(dkPrState, 'APPROVED', 'Aprovados');
-    3: Drill(dkPrState, 'CI', 'CI falhou');
+    0: Drill(dkPrState, 'WAITING', Tr('Aguardando review'));
+    1: Drill(dkPrState, 'CHANGES_REQUESTED', Tr('Mudanças pedidas'));
+    2: Drill(dkPrState, 'APPROVED', Tr('Aprovados'));
+    3: Drill(dkPrState, 'CI', Tr('CI falhou'));
   end;
 end;
 
@@ -802,7 +803,7 @@ begin
   else if Id = 'impedidas' then
     Drill(dkFlagged, '', '')
   else if Id = 'prazo' then
-    Drill(dkDueSoon, '', 'Prazo perto')
+    Drill(dkDueSoon, '', Tr('Prazo perto'))
   else
     Drill(dkAll, '', '');
 end;
@@ -823,7 +824,7 @@ end;
 
 procedure TDashboardView.RingClick(Sender: TObject);
 begin
-  Drill(dkWithDue, '', 'Com prazo');
+  Drill(dkWithDue, '', Tr('Com prazo'));
 end;
 
 procedure TDashboardView.CategoryClick(Sender: TObject; SeriesIndex, DataIndex: Integer;
@@ -839,8 +840,8 @@ procedure TDashboardView.FunnelClick(Sender: TObject; SeriesIndex, DataIndex: In
 begin
   case DataIndex of
     0: Drill(dkAll, '', '');
-    1: Drill(dkCategory, 'indeterminate', 'Em andamento');
-    2: Drill(dkCategory, 'done', 'Concluído');
+    1: Drill(dkCategory, 'indeterminate', Tr('Em andamento'));
+    2: Drill(dkCategory, 'done', Tr('Concluído'));
   end;
 end;
 
@@ -849,7 +850,7 @@ procedure TDashboardView.StatusClick(Sender: TObject; SeriesIndex, DataIndex: In
   const Value: Double);
 begin
   if (SeriesIndex >= 0) and (SeriesIndex <= High(FStatusNames)) then
-    Drill(dkStatus, FStatusNames[SeriesIndex], 'Status: ' + FStatusNames[SeriesIndex]);
+    Drill(dkStatus, FStatusNames[SeriesIndex], Tr('Status: ') + FStatusNames[SeriesIndex]);
 end;
 
 procedure TDashboardView.TagClick(Sender: TObject; SeriesIndex, DataIndex: Integer;

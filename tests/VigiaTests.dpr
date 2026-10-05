@@ -13,6 +13,8 @@ uses
   Vigia.TrayIcon in '..\src\Vigia.TrayIcon.pas',
   Vigia.Update in '..\src\Vigia.Update.pas',
   Vigia.Backup in '..\src\Vigia.Backup.pas',
+  Vigia.I18n in '..\src\Vigia.I18n.pas',
+  Vigia.I18n.En in '..\src\Vigia.I18n.En.pas',
   Winapi.Windows,
   Vcl.Graphics,
   System.Types,
@@ -364,6 +366,16 @@ begin
   Check(UnprotectText('lixo') = '', 'DPAPI: texto inválido vira vazio');
 end;
 
+procedure TestI18n;
+begin
+  SetLanguage('en');
+  Check(Tr('Configurações') = 'Settings', 'i18n: inglês');
+  Check(Tr('Conta: ') = 'Account: ', 'i18n: espaço da ponta acompanha a chave');
+  Check(Tr('frase sem tradução') = 'frase sem tradução', 'i18n: sem tradução fica o português');
+  SetLanguage('pt');
+  Check(Tr('Configurações') = 'Configurações', 'i18n: português');
+end;
+
 procedure TestVersions;
 begin
   Check(CompareVersions('0.20.0', '0.21.0') < 0, 'versão: menor');
@@ -372,12 +384,67 @@ begin
   Check(CompareVersions('0.10.0', '0.9.9') > 0, 'versão: número, não texto');
 end;
 
+{ Formato real conferido na API pública da gitlab.com (issue e MR). Azure pela
+  documentação (sem organização de teste). }
+procedure TestGitLabAzure;
+var
+  J: TJSONObject;
+  It: TItem;
+  A: TAccount;
+  Me: TIdentity;
+begin
+  J := Obj('{"iid":39956,"title":"Suporte ao Windows 11","state":"opened","due_date":"2026-10-20",' +
+    '"updated_at":"2026-10-03T00:10:30.159Z","user_notes_count":2,' +
+    '"assignees":[{"username":"ana","name":"Ana Lima"}],' +
+    '"web_url":"https://gitlab.com/g/runner/-/work_items/39956",' +
+    '"references":{"short":"#39956","full":"g/runner#39956"}}');
+  try
+    It := ParseGitLabItem(J, 4, False);
+    Check((It.Key = 'g/runner#39956') and (It.Status = 'open') and (It.StatusCategory = 'new') and
+      (It.Assignee = 'Ana Lima') and (It.CommentCount = 2) and (Trunc(It.DueDate) = EncodeDate(2026, 10, 20)),
+      'GitLab: issue');
+  finally
+    J.Free;
+  end;
+  J := Obj('{"iid":7511,"title":"Corrige build","state":"opened","draft":true,' +
+    '"detailed_merge_status":"requested_changes","references":{"full":"g/runner!7511"}}');
+  try
+    It := ParseGitLabItem(J, 4, True);
+    Check((It.Key = 'g/runner!7511') and (It.Status = 'rascunho') and
+      (It.ReviewState = 'CHANGES_REQUESTED'), 'GitLab: MR rascunho com mudanças pedidas');
+  finally
+    J.Free;
+  end;
+  Check((RepoOf('g/sub/app!5') = 'g/sub/app') and (RepoOf('Projeto X#9') = 'Projeto X'),
+    'repo de MR do GitLab e projeto do Azure');
+  A := NewAccount(pkAzure);
+  A.Id := 9;
+  A.BaseUrl := 'https://dev.azure.com/acme/';
+  A.IncludeList := 'Loja';
+  Check(ItemAllowed(A, 'Loja#12') and not ItemAllowed(A, 'Outro#3'), 'filtro: projeto do Azure');
+  Me.Id := 'ana@acme.com';
+  J := Obj('{"id":123,"fields":{"System.TeamProject":"Loja","System.Title":"Pix falha",' +
+    '"System.State":"Active","System.AssignedTo":{"displayName":"Ana","uniqueName":"ana@acme.com"},' +
+    '"System.ChangedDate":"2026-10-04T10:00:00.00Z","System.CommentCount":3,' +
+    '"Microsoft.VSTS.Scheduling.DueDate":"2026-10-09T03:00:00Z","System.Tags":"Pix; Blocked"}}');
+  try
+    It := ParseAzureItem(J, A, Me);
+    Check((It.Key = 'Loja#123') and (It.Title = 'Pix falha') and (It.StatusCategory = 'indeterminate') and
+      (isAssigned in It.Sources) and (It.CommentCount = 3) and It.Flagged and
+      (It.Url = 'https://dev.azure.com/acme/Loja/_workitems/edit/123'), 'Azure: work item');
+  finally
+    J.Free;
+  end;
+end;
+
 procedure TestManualKey;
 var
-  G: Boolean;
+  G: TKeyFamily;
 begin
-  Check((NormalizeManualKey(' app-12 ', G) = 'APP-12') and not G, 'chave Jira normalizada');
-  Check((NormalizeManualKey('esasse/github-issues-tray#3', G) = 'esasse/github-issues-tray#3') and G,
+  Check((NormalizeManualKey(' app-12 ', G) = 'APP-12') and (G = kfJira), 'chave Jira normalizada');
+  Check((NormalizeManualKey('grupo/sub/app!5', G) = 'grupo/sub/app!5') and (G = kfRepo), 'chave MR do GitLab');
+  Check((NormalizeManualKey('Meu Projeto#123', G) = 'Meu Projeto#123') and (G = kfAzure), 'chave Azure');
+  Check((NormalizeManualKey('esasse/github-issues-tray#3', G) = 'esasse/github-issues-tray#3') and (G = kfRepo),
     'chave GitHub');
   Check(NormalizeManualKey('qualquer coisa', G) = '', 'chave inválida');
   Check(NormalizeManualKey('o/r#', G) = '', 'GitHub sem número');
@@ -583,7 +650,9 @@ begin
     TestJiraFlagAndDueField;
     TestDiff;
     TestManualKey;
+    TestGitLabAzure;
     TestVersions;
+    TestI18n;
     TestBackup;
     TestCleanComment;
     TestTags;

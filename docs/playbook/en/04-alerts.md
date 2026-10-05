@@ -19,6 +19,8 @@ Vigia polls every 5 minutes (adjustable) and compares with the previous poll. It
 - On an account's **first poll** you only get "Acompanhando N itens" (Following N items). Alerts start after that.
 - Many alerts at once become a single one listing the keys.
 - **Ver no Vigia** (Open in Vigia) on the alert opens the issue.
+- **Responder** (Reply) opens a box in the alert itself: type and press Enter to comment without opening Vigia.
+- **Silenciar** (Mute) stops alerts for the issue until tomorrow at 8 am.
 
 ## Alert style
 

@@ -51,10 +51,11 @@ uses
   Vigia.UI.Common,
   Vigia.UI.Views,
   Vigia.UI.Detail,
+  Vigia.UI.Mini,
   Vigia.Update;
 
 type
-  TItemFilter = (ifMine, ifOverdue, ifReview, ifManual, ifFlagged, ifMyPrs, ifSprint);
+  TItemFilter = (ifNow, ifMine, ifOverdue, ifReview, ifManual, ifFlagged, ifMyPrs, ifSprint);
   TPage = (pgDashboard, pgIssues, pgAccounts, pgSettings);
 
   TMainForm = class(TForm)
@@ -62,6 +63,9 @@ type
     FTray: TTrayIcon;
     FTrayMenu: TPopupMenu;
     FAutostartItem: TMenuItem;
+    FMiniItem: TMenuItem;
+    FMini: TMiniForm;                // janela mini (sempre por cima)
+    FHotkeyToggle: TUIToggle;
     FUpdateItem: TMenuItem;          // "Atualizar para x.y.z", só com versão nova
     FUpdate: TUpdateInfo;            // última release mais nova encontrada
     FUpdateBusy: Boolean;
@@ -99,7 +103,7 @@ type
     // IA automática (tudo desligado por padrão)
     FAiCap: TUINumberInput;
     FAiCheap: TUIInput;
-    FAiAuto: array[0..3] of TUIToggle;  // resumo, risco, rascunho de horas, causa do CI
+    FAiAuto: array[0..4] of TUIToggle;  // resumo, risco, rascunho de horas, causa do CI, triagem
     FSummaryTime: TUITimePicker;
     FDndToggle: TUIToggle;
     FDndStart: TUITimePicker;
@@ -142,6 +146,7 @@ type
     FAutostartToggle: TUIToggle;
     FPollMinutes: TUINumberInput;
     FThemeSelect: TUISelect;
+    FLangSelect: TUISelect;
     FNotifyStyle: TUISelect;
     FSettingsScroll: TUIScrollArea;
     FSettingsColumn: TPanel;
@@ -203,6 +208,8 @@ type
     function BuildAiContext: string;
     procedure ExplainCiFailure(const AItem: TItem);
     procedure RunAutoAi;
+    procedure TriageItems(const AItems: TItems; AManual: Boolean);
+    procedure ApplyTriage(const AItem: TItem);
     procedure AiListModelsClick(Sender: TObject);
     procedure AiModelPicked(Sender: TObject; const AID: string);
     procedure UpdateAiUsage;
@@ -217,6 +224,12 @@ type
     procedure CheckForUpdate(AManual: Boolean);
     procedure StartUpdate(AShow: Boolean);
     procedure UpdateMenuClick(Sender: TObject);
+    procedure MiniMenuClick(Sender: TObject);
+    procedure MiniClosed(Sender: TObject);
+    procedure UpdateMini;
+    procedure SetHotkey(AOn: Boolean);
+    procedure NotifyMute(const AKey: string; AAccountId: Integer);
+    procedure NotifyReply(const AKey: string; AAccountId: Integer; const AText: string);
     procedure UpdateBtnClick(Sender: TObject);
     procedure ExportClick(Sender: TObject);
     procedure ImportClick(Sender: TObject);
@@ -308,6 +321,7 @@ type
   protected
     procedure CreateWnd; override;
     procedure WndProc(var Message: TMessage); override;
+    procedure DestroyWnd; override;
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -321,6 +335,7 @@ var
 implementation
 
 uses
+  Vigia.I18n,
   Winapi.Windows,
   Winapi.ShellAPI,
   System.StrUtils,
@@ -353,6 +368,7 @@ uses
   Vigia.Backup;
 
 const
+  AiAutoKeys: array[0..4] of string = ('ai_daily', 'ai_risk', 'ai_eod', 'ai_ci', 'ai_triage');
   // ponytail: intervalo fixo e sem backoff; virar config por conta se o rate limit apertar.
   DefaultPollMinutes = 5;
   DefaultNotifySeconds = 8;
@@ -362,8 +378,8 @@ const
   AssistantSecret = 'Vigia:anthropic';
   AssistantModel = 'claude-sonnet-5-5';
   DetailWidth = 380;
-  FilterNames: array[TItemFilter] of string = ('Comigo', 'Atrasadas', 'Review', 'Manuais', 'Impedidas', 'Meus PRs', 'Sprint');
-  FilterTones: array[TItemFilter] of TUIBadgeTone = (btPrimary, btError, btInfo, btWarning, btError, btSuccess, btInfo);
+  FilterNames: array[TItemFilter] of string = ('Agora', 'Comigo', 'Atrasadas', 'Review', 'Manuais', 'Impedidas', 'Meus PRs', 'Sprint');
+  FilterTones: array[TItemFilter] of TUIBadgeTone = (btError, btPrimary, btError, btInfo, btWarning, btError, btSuccess, btInfo);
   PageTitles: array[TPage] of string = ('Dashboard', 'Issues', 'Contas', 'Configurações');
 
 type
@@ -381,7 +397,7 @@ type
 
 function TWatchProvider.GroupName: string;
 begin
-  Result := 'Acompanhar';
+  Result := Tr('Acompanhar');
 end;
 
 function TWatchProvider.GroupIconSvg: string;
@@ -390,19 +406,22 @@ begin
 end;
 
 function TWatchProvider.Search(const AQuery: string; AMaxResults: Integer): TUISearchHits;
+const
+  Kinds: array[TKeyFamily] of string = ('', 'Issue/PR do GitHub ou GitLab', 'Issue do Jira',
+    'Work item do Azure DevOps');
 var
   Key: string;
-  IsGitHub: Boolean;
+  Family: TKeyFamily;
   H: TUISearchHit;
 begin
   Result := nil;
-  Key := NormalizeManualKey(AQuery, IsGitHub);
+  Key := NormalizeManualKey(AQuery, Family);
   if Key = '' then
     Exit;
   H := Default(TUISearchHit);
   H.ID := 'watch:' + Key;
-  H.Title := 'Acompanhar ' + Key;
-  H.Subtitle := IfThen(IsGitHub, 'Issue/PR do GitHub', 'Issue do Jira') + ' · entra na lista mesmo sem ser sua';
+  H.Title := Tr('Acompanhar ') + Key;
+  H.Subtitle := Kinds[Family] + Tr(' · entra na lista mesmo sem ser sua');
   H.IconSvg := HeroIcon('squares-plus');
   H.Score := 1000;
   Result := [H];
@@ -438,7 +457,7 @@ begin
   R := TRegistry.Create(KEY_READ);
   try
     R.RootKey := HKEY_CURRENT_USER;
-    Result := R.OpenKeyReadOnly(RunKey) and R.ValueExists('Vigia');
+    Result := R.OpenKeyReadOnly(RunKey) and R.ValueExists(Tr('Vigia'));
   finally
     R.Free;
   end;
@@ -453,9 +472,9 @@ begin
     R.RootKey := HKEY_CURRENT_USER;
     if R.OpenKey(RunKey, True) then
       if AOn then
-        R.WriteString('Vigia', '"' + ParamStr(0) + '"')
-      else if R.ValueExists('Vigia') then
-        R.DeleteValue('Vigia');
+        R.WriteString(Tr('Vigia'), '"' + ParamStr(0) + '"')
+      else if R.ValueExists(Tr('Vigia')) then
+        R.DeleteValue(Tr('Vigia'));
   finally
     R.Free;
   end;
@@ -472,11 +491,24 @@ begin
   Result := (AItem.DueDate > 0) and (DateOf(AItem.DueDate) < Date);
 end;
 
+{ Pede ação hoje: vence hoje ou venceu, menção, review pedido, PR meu com CI
+  vermelho ou mudanças pedidas, ou issue minha impedida. }
+function NeedsActionNow(const AItem: TItem): Boolean;
+begin
+  Result := ((AItem.DueDate > 0) and (DateOf(AItem.DueDate) <= Date)) or AItem.MentionsMe or
+    (isReview in AItem.Sources) or
+    ((isMine in AItem.Sources) and (MatchText(AItem.CiState, ['FAILURE', 'ERROR']) or
+      SameText(AItem.ReviewState, 'CHANGES_REQUESTED'))) or
+    (AItem.Flagged and (isAssigned in AItem.Sources));
+end;
+
 { ── Criação ─────────────────────────────────────────────────────────────── }
 
 constructor TMainForm.Create(AOwner: TComponent);
 begin
   inherited CreateNew(AOwner);
+  // Idioma antes de criar qualquer tela (a segunda instância acha a janela pela legenda: fica sem Tr).
+  SetLanguage(Store.GetSetting('lang'));
   Caption := 'Vigia ' + AppVersion;
   ClientWidth := ScaleValue(1040);
   ClientHeight := ScaleValue(720);
@@ -511,6 +543,11 @@ begin
   FNotifier.OnReceiveLocalNotification := ToastClicked;
   TUIToastManager.Position := tpBottomRight;
   TNotifyManager.OnOpenDetail := NotifyOpenDetail;
+  TNotifyManager.OnMute := NotifyMute;
+  TNotifyManager.OnReply := NotifyReply;
+  // Janela mini aberta da última vez volta aberta.
+  if Store.GetSetting('mini_on') = '1' then
+    TThread.ForceQueue(nil, procedure begin MiniMenuClick(nil); end);
 
   BuildTray;
   BuildShell;
@@ -557,17 +594,48 @@ end;
 var
   WM_VIGIA_SHOW: Cardinal;
 
+const
+  HotkeyId = 1;
+
 procedure TMainForm.WndProc(var Message: TMessage);
 begin
   if (WM_VIGIA_SHOW <> 0) and (Message.Msg = WM_VIGIA_SHOW) then
     MenuOpenClick(nil)
+  else if (Message.Msg = WM_HOTKEY) and (Message.WParam = HotkeyId) then
+  begin
+    // Atalho global alterna: na frente, esconde; senão, traz.
+    if Visible and (GetForegroundWindow = Handle) then
+      FormKeyDownEsc
+    else
+      MenuOpenClick(nil);
+  end
   else
     inherited;
+end;
+
+procedure TMainForm.DestroyWnd;
+begin
+  UnregisterHotKey(Handle, HotkeyId);
+  inherited;
+end;
+
+{ Win+Alt+V em qualquer lugar abre ou esconde o Vigia. Outro programa já com
+  a combinação: fica sem atalho e a opção avisa. }
+procedure TMainForm.SetHotkey(AOn: Boolean);
+const
+  MOD_NOREPEAT = $4000;
+begin
+  if not HandleAllocated then
+    Exit;
+  UnregisterHotKey(Handle, HotkeyId);
+  if AOn and not RegisterHotKey(Handle, HotkeyId, MOD_WIN or MOD_ALT or MOD_NOREPEAT, Ord('V')) then
+    TUIToastManager.Show(Tr('Win+Alt+V já está em uso por outro programa'), ttWarning, 6000);
 end;
 
 procedure TMainForm.CreateWnd;
 begin
   inherited;
+  SetHotkey(Store.GetSetting('hotkey_on', '1') = '1');
   ApplyTitleBarTheme(Self);
 end;
 
@@ -645,18 +713,19 @@ procedure TMainForm.BuildTray;
 
 begin
   FTrayMenu := TPopupMenu.Create(Self);
-  AddItem('Abrir', MenuOpenClick).Default := True;
-  AddItem('Atualizar agora', RefreshClick);
-  FAutostartItem := AddItem('Iniciar com o Windows', AutostartClick);
+  AddItem(Tr('Abrir'), MenuOpenClick).Default := True;
+  AddItem(Tr('Atualizar agora'), RefreshClick);
+  FAutostartItem := AddItem(Tr('Iniciar com o Windows'), AutostartClick);
   FAutostartItem.Checked := AutostartEnabled;
-  FUpdateItem := AddItem('Atualizar o Vigia', UpdateMenuClick);
+  FMiniItem := AddItem(Tr('Janela mini'), MiniMenuClick);
+  FUpdateItem := AddItem(Tr('Atualizar o Vigia'), UpdateMenuClick);
   FUpdateItem.Visible := False;
   AddItem('-', nil);
-  AddItem('Sair', MenuExitClick);
+  AddItem(Tr('Sair'), MenuExitClick);
 
   FTray := TTrayIcon.Create(Self);
   UpdateTrayIcon;
-  FTray.Hint := 'Vigia';
+  FTray.Hint := Tr('Vigia');
   FTray.PopupMenu := FTrayMenu;
   FTray.OnDblClick := TrayDblClick;
   FTray.OnBalloonClick := BalloonClick;
@@ -684,7 +753,7 @@ begin
   FThemeSwap.SwapType := stRotate;
   FThemeSwap.Size := 36;
   FThemeSwap.Checked := UITheme.IsDark;
-  FThemeSwap.Hint := 'Tema claro/escuro';
+  FThemeSwap.Hint := Tr('Tema claro/escuro');
   FThemeSwap.TabStop := False;  // o anel de foco pontilhado parecia falha no desenho
   FThemeSwap.ShowHint := True;
   FThemeSwap.OnToggle := ThemeSwapToggle;
@@ -700,7 +769,7 @@ begin
   // Largura fixa: com AutoWidth a troca de conta mudava a largura e o VCL
   // reordenava os controles alRight do cabeçalho.
   FAccountBtn.Width := ScaleValue(200);
-  FAccountBtn.Hint := 'Conta exibida em todas as telas e no Ctrl+K';
+  FAccountBtn.Hint := Tr('Conta exibida em todas as telas e no Ctrl+K');
   FAccountBtn.ShowHint := True;
   FAccountBtn.OnClick := AccountBtnClick;
   FAccountBtn.AlignWithMargins := True;
@@ -711,7 +780,7 @@ begin
   FRepoBtn := TUIButton.Create(Self);
   FRepoBtn.Variant := bvGhost;
   FRepoBtn.Width := ScaleValue(240);
-  FRepoBtn.Hint := 'Repositório exibido em Issues e no Dashboard';
+  FRepoBtn.Hint := Tr('Repositório exibido em Issues e no Dashboard');
   FRepoBtn.ShowHint := True;
   FRepoBtn.OnClick := RepoBtnClick;
   FRepoBtn.AlignWithMargins := True;
@@ -788,8 +857,8 @@ begin
   FDashboard.Parent := FPages[pgDashboard];
 
   FPalette := TUICommandPalette.Create(Self);
-  FPalette.Shortcut := 'Ctrl+K';
-  FPalette.Placeholder := 'Buscar issue ou comando...';
+  FPalette.Shortcut := Tr('Ctrl+K');
+  FPalette.Placeholder := Tr('Buscar issue ou comando...');
   FPalette.OnItemSelect := PaletteSelect;
   FPalette.AddProvider(TWatchProvider.Create);
 end;
@@ -829,11 +898,11 @@ begin
   Bar := NewPanel(Page, alTop, 44);
   Bar.Top := Page.ControlCount * 1000;
   Bar.Padding.SetBounds(Sp(S.S4), Sp(S.S2), Sp(S.S4), Sp(S.S1));
-  NewRowLabel(Bar, 'Filtros');
+  NewRowLabel(Bar, Tr('Filtros'));
   for F := Low(TItemFilter) to High(TItemFilter) do
   begin
     FChips[F] := TUIFilterChip.Create(Self);
-    FChips[F].Caption := FilterNames[F];
+    FChips[F].Caption := Tr(FilterNames[F]);
     FChips[F].Count := 0;
     FChips[F].Tone := FilterTones[F];
     FChips[F].OnToggle := FilterChanged;
@@ -844,32 +913,32 @@ begin
     FChips[F].Parent := Bar;
   end;
   FGroupChip := TUIFilterChip.Create(Self);
-  FGroupChip.Caption := 'Agrupar';
-  FGroupChip.Hint := 'Agrupa a lista por repositório (GitHub) ou projeto (Jira)';
+  FGroupChip.Caption := Tr('Agrupar');
+  FGroupChip.Hint := Tr('Agrupa a lista por repositório (GitHub) ou projeto (Jira)');
   FGroupChip.ShowHint := True;
   FGroupChip.Active := Store.GetSetting('group_list') = '1';
   FGroupChip.OnToggle := FilterChanged;
   FGroupChip.AlignWithMargins := True;
-  FGroupChip.Margins.SetBounds(Sp(S.S4), 0, 0, 0);
-  FGroupChip.Left := 90000;
-  FGroupChip.Align := alLeft;
-  FGroupChip.Parent := Bar;
+  FGroupChip.Margins.SetBounds(Sp(S.S2), 0, 0, 0);
+  FGroupChip.Left := 900000;
+  FGroupChip.Align := alRight;  // vai para a linha das tags: a dos filtros encheu
   FCollapsed := TDictionary<string, Boolean>.Create;
   FDrillChip := TUIFilterChip.Create(Self);
   FDrillChip.Tone := btPrimary;
   FDrillChip.Active := True;
   FDrillChip.Visible := False;
   FDrillChip.OnToggle := DrillChipToggle;
-  FDrillChip.Left := 100000;
-  FDrillChip.Align := alLeft;
-  FDrillChip.Parent := Bar;
+  FDrillChip.AlignWithMargins := True;
+  FDrillChip.Margins.SetBounds(Sp(S.S2), 0, 0, 0);
+  FDrillChip.Left := 800000;
+  FDrillChip.Align := alRight;
 
   FTagBar := NewPanel(Page, alTop, 40);
   FTagBar.Top := Page.ControlCount * 1000;
   FTagBar.Padding.SetBounds(Sp(S.S4), 0, Sp(S.S4), Sp(S.S1));
-  NewRowLabel(FTagBar, 'Tags');
+  NewRowLabel(FTagBar, Tr('Tags'));
   FTagHint := TUILabel.Create(Self);
-  FTagHint.Caption := 'Botão direito numa issue › Tag › Gerenciar para criar (ex.: #Bug, #Feature)';
+  FTagHint.Caption := Tr('Botão direito numa issue › Tag › Gerenciar para criar (ex.: #Bug, #Feature)');
   FTagHint.Variant := lvMuted;
   FTagHint.FontSize := HintFontSize;
   FTagHint.Italic := True;
@@ -878,6 +947,8 @@ begin
   FTagHint.Left := 900000;
   FTagHint.Align := alLeft;
   FTagHint.Parent := FTagBar;
+  FDrillChip.Parent := FTagBar;
+  FGroupChip.Parent := FTagBar;
   FTagMenu := TUIContextMenu.Create(Self);
   FTagMenu.OnItemClick := TagMenuClick;
   FActionMenu := TUIContextMenu.Create(Self);
@@ -939,7 +1010,7 @@ begin
   Bar := NewPanel(Page, alTop, 60);
   Bar.Padding.SetBounds(Sp(S.S4), Sp(S.S3), Sp(S.S4), Sp(S.S2));
   Btn := TUIButton.Create(Self);
-  Btn.Caption := 'Nova conta';
+  Btn.Caption := Tr('Nova conta');
   Btn.AutoWidth := True;
   Btn.OnClick := NewAccountClick;
   Btn.Align := alRight;
@@ -952,9 +1023,9 @@ begin
   FAccountsBox.Parent := Page;
 
   FAccountsEmpty := TUIEmptyState.Create(Self);
-  FAccountsEmpty.Title := 'Nenhuma conta ainda';
-  FAccountsEmpty.Description := 'Adicione uma conta do GitHub ou do Jira para o Vigia começar a acompanhar.';
-  FAccountsEmpty.ActionLabel := 'Nova conta';
+  FAccountsEmpty.Title := Tr('Nenhuma conta ainda');
+  FAccountsEmpty.Description := Tr('Adicione uma conta do GitHub ou do Jira para o Vigia começar a acompanhar.');
+  FAccountsEmpty.ActionLabel := Tr('Nova conta');
   FAccountsEmpty.OnAction := NewAccountClick;
   FAccountsEmpty.Visible := False;
   FAccountsEmpty.Align := alClient;
@@ -1056,18 +1127,18 @@ begin
   FSettingsColumn := Column;
   Page.OnResize := SettingsResize;
 
-  Card := NewSection('Geral', 4);
-  Host := NewRow(Card, 'Iniciar com o Windows',
-    'Abre o Vigia na bandeja quando você entra no Windows. Vale só para este usuário.', 60);
+  Card := NewSection(Tr('Geral'), 6);
+  Host := NewRow(Card, Tr('Iniciar com o Windows'),
+    Tr('Abre o Vigia na bandeja quando você entra no Windows. Vale só para este usuário.'), 60);
   FAutostartToggle := TUIToggle.Create(Self);
   FAutostartToggle.Checked := AutostartEnabled;
   FAutostartToggle.OnChange := GeneralSettingChange;
   FAutostartToggle.Align := alClient;
   FAutostartToggle.Parent := Host;
 
-  Host := NewRow(Card, 'Buscar a cada', 'Intervalo entre as consultas ao GitHub e ao Jira.', 150);
+  Host := NewRow(Card, Tr('Buscar a cada'), Tr('Intervalo entre as consultas ao GitHub e ao Jira.'), 150);
   FPollMinutes := TUINumberInput.Create(Self);
-  FPollMinutes.SuffixText := 'min';
+  FPollMinutes.SuffixText := Tr('min');
   FPollMinutes.Min := 1;
   FPollMinutes.Max := 120;
   FPollMinutes.Value := StrToIntDef(Store.GetSetting('poll_minutes'), DefaultPollMinutes);
@@ -1075,20 +1146,39 @@ begin
   FPollMinutes.Align := alClient;
   FPollMinutes.Parent := Host;
 
-  Host := NewRow(Card, 'Tema', 'Seguir o Windows ou fixar claro ou escuro.', 220);
+  Host := NewRow(Card, Tr('Tema'), Tr('Seguir o Windows ou fixar claro ou escuro.'), 220);
   FThemeSelect := TUISelect.Create(Self);
-  FThemeSelect.Items.Add('Seguir o Windows');
-  FThemeSelect.Items.Add('Claro');
-  FThemeSelect.Items.Add('Escuro');
+  FThemeSelect.Items.Add(Tr('Seguir o Windows'));
+  FThemeSelect.Items.Add(Tr('Claro'));
+  FThemeSelect.Items.Add(Tr('Escuro'));
   FThemeSelect.ItemIndex := IndexText(Store.GetSetting('theme'), ['', 'light', 'dark']);
   FThemeSelect.OnChange := GeneralSettingChange;
   FThemeSelect.Align := alClient;
   FThemeSelect.Parent := Host;
 
-  Host := NewRow(Card, 'Atualizações', 'Versão ' + AppVersion + '. Procura release nova uma vez por dia ' +
-    '(só na versão instalada).', 340);
+  Host := NewRow(Card, Tr('Idioma'), Tr('Português ou inglês. Vale ao reabrir o Vigia.'), 220);
+  FLangSelect := TUISelect.Create(Self);
+  FLangSelect.Items.Add(Tr('Automático (Windows)'));
+  FLangSelect.Items.Add('Português');
+  FLangSelect.Items.Add('English');
+  FLangSelect.ItemIndex := Max(0, IndexText(Store.GetSetting('lang'), ['', 'pt', 'en']));
+  FLangSelect.OnChange := GeneralSettingChange;
+  FLangSelect.Align := alClient;
+  FLangSelect.Parent := Host;
+
+  Host := NewRow(Card, Tr('Atalho global'),
+    Tr('Win+Alt+V abre o Vigia de qualquer programa; de novo, esconde.'), 60);
+  FHotkeyToggle := TUIToggle.Create(Self);
+  FHotkeyToggle.Checked := Store.GetSetting('hotkey_on', '1') = '1';
+  FHotkeyToggle.OnChange := GeneralSettingChange;
+  FHotkeyToggle.Width := ScaleValue(60);
+  FHotkeyToggle.Align := alLeft;
+  FHotkeyToggle.Parent := Host;
+
+  Host := NewRow(Card, Tr('Atualizações'), Tr('Versão ') + AppVersion + Tr('. Procura release nova uma vez por dia ' +
+    '(só na versão instalada).'), 340);
   FUpdateBtn := TUIButton.Create(Self);
-  FUpdateBtn.Caption := 'Procurar agora';
+  FUpdateBtn.Caption := Tr('Procurar agora');
   FUpdateBtn.Variant := bvOutline;
   FUpdateBtn.AutoWidth := True;
   FUpdateBtn.OnClick := UpdateBtnClick;
@@ -1097,27 +1187,27 @@ begin
   FUpdateBtn.Align := alRight;
   FUpdateBtn.Parent := Host;
   FUpdateMode := TUISelect.Create(Self);
-  FUpdateMode.Items.Add('Só avisar');
-  FUpdateMode.Items.Add('Instalar sozinho');
-  FUpdateMode.Items.Add('Não procurar');
+  FUpdateMode.Items.Add(Tr('Só avisar'));
+  FUpdateMode.Items.Add(Tr('Instalar sozinho'));
+  FUpdateMode.Items.Add(Tr('Não procurar'));
   FUpdateMode.ItemIndex := Max(0, IndexText(Store.GetSetting('update_mode'), ['notify', 'auto', 'off']));
   FUpdateMode.OnChange := GeneralSettingChange;
   FUpdateMode.Align := alClient;
   FUpdateMode.Parent := Host;
 
-  Card := NewSection('Notificações', 5);
-  Host := NewRow(Card, 'Estilo do aviso',
-    'Popup do Vigia no canto da tela, ou a notificação padrão do Windows.', 220);
+  Card := NewSection(Tr('Notificações'), 5);
+  Host := NewRow(Card, Tr('Estilo do aviso'),
+    Tr('Popup do Vigia no canto da tela, ou a notificação padrão do Windows.'), 220);
   FNotifyStyle := TUISelect.Create(Self);
-  FNotifyStyle.Items.Add('Popup do Vigia');
-  FNotifyStyle.Items.Add('Windows');
+  FNotifyStyle.Items.Add(Tr('Popup do Vigia'));
+  FNotifyStyle.Items.Add(Tr('Windows'));
   FNotifyStyle.ItemIndex := IfThen(Store.GetSetting('notify_style', 'vigia') = 'vigia', 0, 1);
   FNotifyStyle.OnChange := GeneralSettingChange;
   FNotifyStyle.Align := alClient;
   FNotifyStyle.Parent := Host;
 
-  Host := NewRow(Card, 'Tempo na tela',
-    'Quanto o popup fica visível. Com o mouse em cima ele espera.', 150);
+  Host := NewRow(Card, Tr('Tempo na tela'),
+    Tr('Quanto o popup fica visível. Com o mouse em cima ele espera.'), 150);
   FNotifySeconds := TUINumberInput.Create(Self);
   FNotifySeconds.SuffixText := 's';
   FNotifySeconds.Min := 3;
@@ -1127,8 +1217,8 @@ begin
   FNotifySeconds.Align := alClient;
   FNotifySeconds.Parent := Host;
 
-  Host := NewRow(Card, 'Resumo do dia',
-    'Um aviso por dia com o que vence, o que está impedido e os comentários novos.', 200);
+  Host := NewRow(Card, Tr('Resumo do dia'),
+    Tr('Um aviso por dia com o que vence, o que está impedido e os comentários novos.'), 200);
   FSummaryTime := TUITimePicker.Create(Self);
   FSummaryTime.Hour := HourOf(TimeSetting('summary_time', '09:00'));
   FSummaryTime.Minute := MinuteOf(TimeSetting('summary_time', '09:00'));
@@ -1142,8 +1232,8 @@ begin
   FSummaryToggle.Align := alLeft;
   FSummaryToggle.Parent := Host;
 
-  Host := NewRow(Card, 'Não perturbe',
-    'Nesse horário os avisos esperam e chegam juntos quando o silêncio acaba.', 300);
+  Host := NewRow(Card, Tr('Não perturbe'),
+    Tr('Nesse horário os avisos esperam e chegam juntos quando o silêncio acaba.'), 300);
   FDndToggle := TUIToggle.Create(Self);
   FDndToggle.Checked := Store.GetSetting('dnd_on', '0') = '1';
   FDndToggle.OnChange := GeneralSettingChange;
@@ -1168,17 +1258,17 @@ begin
   FDndEnd.Align := alClient;
   FDndEnd.Parent := Host;
 
-  Host := NewRow(Card, 'Testar', 'Mostra um aviso de exemplo com o estilo escolhido.', 150);
+  Host := NewRow(Card, Tr('Testar'), Tr('Mostra um aviso de exemplo com o estilo escolhido.'), 150);
   Btn := TUIButton.Create(Self);
-  Btn.Caption := 'Mostrar aviso';
+  Btn.Caption := Tr('Mostrar aviso');
   Btn.Variant := bvOutline;
   Btn.OnClick := TestNotifyClick;
   Btn.Align := alClient;
   Btn.Parent := Host;
 
-  Card := NewSection('Assistente de IA', 5);
-  Host := NewRow(Card, 'Provedor', 'Anthropic usa o assistente completo da suíte; os outros, a API ' +
-    'compatível com OpenAI.', 260);
+  Card := NewSection(Tr('Assistente de IA'), 5);
+  Host := NewRow(Card, Tr('Provedor'), Tr('Anthropic usa o assistente completo da suíte; os outros, a API ' +
+    'compatível com OpenAI.'), 260);
   FAiProvider := TUISelect.Create(Self);
   for AK := Low(TAiProviderKind) to High(TAiProviderKind) do
     FAiProvider.Items.Add(AiProviderNames[AK]);
@@ -1187,16 +1277,16 @@ begin
   FAiProvider.Align := alClient;
   FAiProvider.Parent := Host;
 
-  Host := NewRow(Card, 'Endereço da API', 'Já vem preenchido; troque para um gateway próprio ou Ollama remoto.', 340);
+  Host := NewRow(Card, Tr('Endereço da API'), Tr('Já vem preenchido; troque para um gateway próprio ou Ollama remoto.'), 340);
   FAiBaseUrl := TUIInput.Create(Self);
   FAiBaseUrl.ReserveHintSpace := False;
   FAiBaseUrl.OnBlur := AiSettingChange;
   FAiBaseUrl.Align := alClient;
   FAiBaseUrl.Parent := Host;
 
-  Host := NewRow(Card, 'Chave', 'Uma por provedor, no Credential Manager deste usuário.', 340);
+  Host := NewRow(Card, Tr('Chave'), Tr('Uma por provedor, no Credential Manager deste usuário.'), 340);
   Btn := TUIButton.Create(Self);
-  Btn.Caption := 'Salvar';
+  Btn.Caption := Tr('Salvar');
   Btn.AutoWidth := True;
   Btn.OnClick := SaveApiKeyClick;
   Btn.AlignWithMargins := True;
@@ -1210,9 +1300,9 @@ begin
   FApiKey.Align := alClient;
   FApiKey.Parent := Host;
 
-  Host := NewRow(Card, 'Modelo', 'Digite ou escolha da lista que o provedor devolve.', 340);
+  Host := NewRow(Card, Tr('Modelo'), Tr('Digite ou escolha da lista que o provedor devolve.'), 340);
   FAiModelsBtn := TUIButton.Create(Self);
-  FAiModelsBtn.Caption := 'Listar';
+  FAiModelsBtn.Caption := Tr('Listar');
   FAiModelsBtn.Variant := bvOutline;
   FAiModelsBtn.AutoWidth := True;
   FAiModelsBtn.OnClick := AiListModelsClick;
@@ -1231,10 +1321,10 @@ begin
   FAiModelsMenu.MaxHeight := ScaleValue(320);
   FAiModelsMenu.OnItemClick := AiModelPicked;
 
-  Host := NewRow(Card, 'Preço (US$ por milhão de tokens)',
-    'Entrada e saída. Claude já vem com o preço público; nos outros, preencha para ver o custo.', 320);
+  Host := NewRow(Card, Tr('Preço (US$ por milhão de tokens)'),
+    Tr('Entrada e saída. Claude já vem com o preço público; nos outros, preencha para ver o custo.'), 320);
   FAiPriceOut := TUINumberInput.Create(Self);
-  FAiPriceOut.PrefixText := 'saída';
+  FAiPriceOut.PrefixText := Tr('saída');
   FAiPriceOut.DecimalPlaces := 2;
   FAiPriceOut.Step := 0.1;
   FAiPriceOut.Max := 1000;
@@ -1253,11 +1343,11 @@ begin
   FAiPriceIn.Align := alLeft;
   FAiPriceIn.Parent := Host;
 
-  Card := NewSection('Backup', 1);
-  Host := NewRow(Card, 'Contas e configurações', 'Arquivo com contas, tags, issues acompanhadas e ' +
-    'preferências. Os tokens vão cifrados e só voltam neste usuário do Windows.', 260);
+  Card := NewSection(Tr('Backup'), 1);
+  Host := NewRow(Card, Tr('Contas e configurações'), Tr('Arquivo com contas, tags, issues acompanhadas e ' +
+    'preferências. Os tokens vão cifrados e só voltam neste usuário do Windows.'), 260);
   Btn := TUIButton.Create(Self);
-  Btn.Caption := 'Importar...';
+  Btn.Caption := Tr('Importar...');
   Btn.Variant := bvOutline;
   Btn.AutoWidth := True;
   Btn.OnClick := ImportClick;
@@ -1266,16 +1356,16 @@ begin
   Btn.Align := alRight;
   Btn.Parent := Host;
   Btn := TUIButton.Create(Self);
-  Btn.Caption := 'Exportar...';
+  Btn.Caption := Tr('Exportar...');
   Btn.Variant := bvOutline;
   Btn.AutoWidth := True;
   Btn.OnClick := ExportClick;
   Btn.Align := alRight;
   Btn.Parent := Host;
 
-  Card := NewSection('IA automática', 6);
-  Host := NewRow(Card, 'Limite por mês (US$)', 'Chegou no limite, o chat e as tarefas automáticas param ' +
-    'até o mês virar. 0 = sem limite.', 160);
+  Card := NewSection(Tr('IA automática'), 7);
+  Host := NewRow(Card, Tr('Limite por mês (US$)'), Tr('Chegou no limite, o chat e as tarefas automáticas param ' +
+    'até o mês virar. 0 = sem limite.'), 160);
   FAiCap := TUINumberInput.Create(Self);
   FAiCap.DecimalPlaces := 2;
   FAiCap.Step := 1;
@@ -1284,24 +1374,25 @@ begin
   FAiCap.OnChange := AiAutoChange;
   FAiCap.Align := alClient;
   FAiCap.Parent := Host;
-  Host := NewRow(Card, 'Modelo das tarefas automáticas', 'Mais barato que o do chat. Vazio = o mesmo do chat.', 300);
+  Host := NewRow(Card, Tr('Modelo das tarefas automáticas'), Tr('Mais barato que o do chat. Vazio = o mesmo do chat.'), 300);
   FAiCheap := TUIInput.Create(Self);
   FAiCheap.ReserveHintSpace := False;
   FAiCheap.Value := AiCheapModel;
   FAiCheap.OnBlur := AiAutoChange;
   FAiCheap.Align := alClient;
   FAiCheap.Parent := Host;
-  for UK := 0 to 3 do
+  for UK := 0 to 4 do
   begin
     case UK of
-      0: Host := NewRow(Card, 'Resumo do dia escrito pela IA', 'No horário do resumo. Sem IA, vai o resumo em números.', 60);
-      1: Host := NewRow(Card, 'Alerta de risco', 'Uma vez por dia: até 3 issues com chance de atrasar ou travar.', 60);
-      2: Host := NewRow(Card, 'Rascunho de horas no fim do dia', 'Às 17:30, em dias úteis. O assistente lança se você pedir.', 60);
-      3: Host := NewRow(Card, 'Causa da falha do CI', 'Quando um PR seu fica vermelho, lê o log do job e explica.', 60);
+      0: Host := NewRow(Card, Tr('Resumo do dia escrito pela IA'), Tr('No horário do resumo. Sem IA, vai o resumo em números.'), 60);
+      1: Host := NewRow(Card, Tr('Alerta de risco'), Tr('Uma vez por dia: até 3 issues com chance de atrasar ou travar.'), 60);
+      2: Host := NewRow(Card, Tr('Rascunho de horas no fim do dia'), Tr('Às 17:30, em dias úteis. O assistente lança se você pedir.'), 60);
+      3: Host := NewRow(Card, Tr('Causa da falha do CI'), Tr('Quando um PR seu fica vermelho, lê o log do job e explica.'), 60);
+      4: Host := NewRow(Card, Tr('Triagem de issues novas'), Tr('Sugere tag e prioridade para até 3 issues novas por busca. ' +
+        'Aplicar fica no botão direito › Ações.'), 60);
     end;
     FAiAuto[UK] := TUIToggle.Create(Self);
-    FAiAuto[UK].Checked := Store.GetSetting(IfThen(UK = 0, 'ai_daily', IfThen(UK = 1, 'ai_risk',
-      IfThen(UK = 2, 'ai_eod', 'ai_ci')))) = '1';
+    FAiAuto[UK].Checked := Store.GetSetting(AiAutoKeys[UK]) = '1';
     FAiAuto[UK].OnChange := AiAutoChange;
     FAiAuto[UK].Width := ScaleValue(60);
     FAiAuto[UK].Align := alLeft;
@@ -1309,7 +1400,7 @@ begin
   end;
 
   // Uso: números do mês e custo por dia.
-  Card := NewSection('Uso da IA (custo estimado)', 0);
+  Card := NewSection(Tr('Uso da IA (custo estimado)'), 0);
   Card.Height := ScaleValue(44 + 120 + 70 + 16);
   Row := NewPanel(Card, alNone, 120);
   Row.Top := 1000;
@@ -1324,21 +1415,21 @@ begin
     FAiStats[UK].Align := alLeft;
     FAiStats[UK].Parent := Row;
   end;
-  FAiStats[0].CardLabel := 'Perguntas no mês';
-  FAiStats[1].CardLabel := 'Tokens por pergunta';
-  FAiStats[1].SubText := 'média, entrada + saída';
-  FAiStats[2].CardLabel := 'Custo no mês';
+  FAiStats[0].CardLabel := Tr('Perguntas no mês');
+  FAiStats[1].CardLabel := Tr('Tokens por pergunta');
+  FAiStats[1].SubText := Tr('média, entrada + saída');
+  FAiStats[2].CardLabel := Tr('Custo no mês');
   FAiStats[2].ValueFormat := nfDecimal;
   FAiStats[2].ValueDecimals := 2;
-  FAiStats[2].ValuePrefix := 'US$ ';
-  FAiStats[3].CardLabel := 'Custo por pergunta';
+  FAiStats[2].ValuePrefix := Tr('US$ ');
+  FAiStats[3].CardLabel := Tr('Custo por pergunta');
   FAiStats[3].ValueFormat := nfDecimal;
   FAiStats[3].ValueDecimals := 4;
-  FAiStats[3].ValuePrefix := 'US$ ';
+  FAiStats[3].ValuePrefix := Tr('US$ ');
   FAiCostSpark := TUISparkline.Create(Self);
   FAiCostSpark.Kind := skBar;
   FAiCostSpark.Color := UITheme.Tokens.Color.Primary;
-  FAiCostSpark.Hint := 'Custo por dia, últimos 30 dias';
+  FAiCostSpark.Hint := Tr('Custo por dia, últimos 30 dias');
   FAiCostSpark.ShowHint := True;
   FAiCostSpark.AlignWithMargins := True;
   FAiCostSpark.Margins.SetBounds(0, Sp(S.S3), 0, 0);
@@ -1380,11 +1471,11 @@ begin
     Cfg := CurrentAiConfig;
     FAiProvider.ItemIndex := Ord(Cfg.Kind);
     FAiBaseUrl.Value := Cfg.BaseUrl;
-    FAiBaseUrl.LabelText := IfThen(Cfg.Kind = apAnthropic, 'Padrão da Anthropic', 'https://...');
+    FAiBaseUrl.LabelText := IfThen(Cfg.Kind = apAnthropic, Tr('Padrão da Anthropic'), 'https://...');
     FAiModel.Value := Cfg.Model;
-    FAiModel.LabelText := 'ex.: ' + IfThen(Cfg.Kind = apAnthropic, AiDefaultModel, 'nome do modelo');
-    FApiKey.LabelText := IfThen(Cfg.ApiKey <> '', 'Chave salva (digite para trocar)',
-      IfThen(Cfg.Kind = apOllama, 'Ollama local não precisa de chave', 'Cole a chave aqui'));
+    FAiModel.LabelText := Tr('ex.: ') + IfThen(Cfg.Kind = apAnthropic, AiDefaultModel, Tr('nome do modelo'));
+    FApiKey.LabelText := IfThen(Cfg.ApiKey <> '', Tr('Chave salva (digite para trocar)'),
+      IfThen(Cfg.Kind = apOllama, Tr('Ollama local não precisa de chave'), Tr('Cole a chave aqui')));
     AiPriceFor(Cfg.Model, PIn, POut);
     FAiPriceIn.Value := PIn;
     FAiPriceOut.Value := POut;
@@ -1443,14 +1534,14 @@ begin
           FAiModelsBtn.Loading := False;
           if Err <> '' then
           begin
-            TUIToastManager.Show('Não listou: ' + Err, TUIToastTone(2), 6000);
+            TUIToastManager.Show(Tr('Não listou: ') + Err, TUIToastTone(2), 6000);
             Exit;
           end;
           FAiModelsMenu.ClearItems;
           for M in Models do
             FAiModelsMenu.AddItem(M, M);
           if Models = nil then
-            TUIToastManager.Show('O provedor não devolveu modelos', TUIToastTone(3))
+            TUIToastManager.Show(Tr('O provedor não devolveu modelos'), TUIToastTone(3))
           else
             FAiModelsMenu.Open;
         end);
@@ -1511,13 +1602,13 @@ begin
   FAiStats[1].NumericValue := IfThen(Count > 0, (TIn + TOut) / Max(Count, 1), 0);
   FAiStats[2].NumericValue := Cost;
   FAiStats[3].NumericValue := IfThen(Count > 0, Cost / Max(Count, 1), 0);
-  FAiStats[0].SubText := Format('%d entrada · %d saída', [TIn, TOut]);
+  FAiStats[0].SubText := Format(Tr('%d entrada · %d saída'), [TIn, TOut]);
   Fmt := TFormatSettings.Invariant;
   // Fica em dólar; o real vai pequeno embaixo, pela cotação do dia.
   Rate := StrToFloatDef(Store.GetSetting('usd_brl'), 0, Fmt);
   if Rate > 0 then
   begin
-    FAiStats[2].SubText := Format('≈ R$ %s · dólar a R$ %s', [FormatFloat('#,##0.00', Cost * Rate),
+    FAiStats[2].SubText := Format(Tr('≈ R$ %s · dólar a R$ %s'), [FormatFloat('#,##0.00', Cost * Rate),
       FormatFloat('0.00', Rate)]);
     FAiStats[3].SubText := '≈ R$ ' + FormatFloat('#,##0.0000', IfThen(Count > 0, Cost / Max(Count, 1), 0) * Rate);
   end;
@@ -1531,8 +1622,8 @@ end;
 
 procedure TMainForm.TestNotifyClick(Sender: TObject);
 begin
-  Notify('Acme · APP-123 · Novo comentário',
-    'Maria: pode validar o ajuste no checkout antes de subir?', '', stInfo, '*teste');
+  Notify(Tr('Acme · APP-123 · Novo comentário'),
+    Tr('Maria: pode validar o ajuste no checkout antes de subir?'), '', stInfo, '*teste');
 end;
 
 { Assistente da suíte: botão flutuante no canto, painel de conversa. As issues
@@ -1550,8 +1641,8 @@ begin
   FAssistant.Config.Model := AssistantModel;
   // Mascote animado (Lottie) por estado: ocioso, ouvindo, pensando, falando, dormindo.
   FAssistant.Behaviors.ApplyDefaults(ExtractFilePath(ParamStr(0)) + 'assets\assistant');
-  FAssistant.Greeting := 'Posso resumir suas issues, registrar horas, comentar, mudar status e filtrar ' +
-    'a tela. Toda escrita pede sua confirmação. Ex.: "o que vence esta semana?" ou "lance 2h na PROJ-1".';
+  FAssistant.Greeting := Tr('Posso resumir suas issues, registrar horas, comentar, mudar status e filtrar ' +
+    'a tela. Toda escrita pede sua confirmação. Ex.: "o que vence esta semana?" ou "lance 2h na PROJ-1".');
   RegisterAiTools;
   FAssistant.BringToFront;
 end;
@@ -1643,6 +1734,16 @@ begin
     Store.SetSetting('dnd_start', Format('%.2d:%.2d', [FDndStart.Hour, FDndStart.Minute]))
   else if Sender = FDndEnd then
     Store.SetSetting('dnd_end', Format('%.2d:%.2d', [FDndEnd.Hour, FDndEnd.Minute]))
+  else if (Sender = FLangSelect) and (FLangSelect.ItemIndex >= 0) then
+  begin
+    Store.SetSetting('lang', IfThen(FLangSelect.ItemIndex = 1, 'pt', IfThen(FLangSelect.ItemIndex = 2, 'en', '')));
+    TUIToastManager.Show(Tr('O idioma muda ao reabrir o Vigia'), ttInfo);
+  end
+  else if Sender = FHotkeyToggle then
+  begin
+    Store.SetSetting('hotkey_on', IfThen(FHotkeyToggle.Checked, '1', '0'));
+    SetHotkey(FHotkeyToggle.Checked);
+  end
   else if (Sender = FUpdateMode) and (FUpdateMode.ItemIndex >= 0) then
     Store.SetSetting('update_mode', IfThen(FUpdateMode.ItemIndex = 1, 'auto',
       IfThen(FUpdateMode.ItemIndex = 2, 'off', 'notify')))
@@ -1691,8 +1792,13 @@ begin
     FAssistant.Parent := Host;
     ClipAssistant;
   end;
-  FAssistant.SetBounds(Host.ClientWidth - FAssistant.Width - ScaleValue(16),
-    Host.ClientHeight - FAssistant.Height - ScaleValue(16), FAssistant.Width, FAssistant.Height);
+  // Painel da issue aberto: o FAB vai para a esquerda dele e não cobre o enviar.
+  if (Host = FDetail.Parent) and FDetail.Visible and (FDetail.Width > 0) then
+    FAssistant.SetBounds(FDetail.Left - FAssistant.Width - ScaleValue(16),
+      Host.ClientHeight - FAssistant.Height - ScaleValue(16), FAssistant.Width, FAssistant.Height)
+  else
+    FAssistant.SetBounds(Host.ClientWidth - FAssistant.Width - ScaleValue(16),
+      Host.ClientHeight - FAssistant.Height - ScaleValue(16), FAssistant.Width, FAssistant.Height);
   FAssistant.BringToFront;
 end;
 
@@ -1708,24 +1814,24 @@ var
   It: TItem;
 begin
   FPalette.ClearItems;
-  FPalette.AddCommand('Ações / Atualizar agora', procedure begin Poll(True); end, HeroIcon('arrow-path'));
-  FPalette.AddCommand('Ações / Alternar tema claro e escuro',
+  FPalette.AddCommand(Tr('Ações / Atualizar agora'), procedure begin Poll(True); end, HeroIcon('arrow-path'));
+  FPalette.AddCommand(Tr('Ações / Alternar tema claro e escuro'),
     procedure
     begin
       FThemeSwap.Checked := not FThemeSwap.Checked;
       ThemeSwapToggle(nil);
     end, HeroIcon('sun'));
-  FPalette.AddCommand('Ações / Nova conta', procedure begin NewAccountClick(nil); end, HeroIcon('squares-plus'));
-  FPalette.AddCommand('Ações / Assistente IA', procedure begin FAssistant.Open; end, HeroIcon('fire'));
+  FPalette.AddCommand(Tr('Ações / Nova conta'), procedure begin NewAccountClick(nil); end, HeroIcon('squares-plus'));
+  FPalette.AddCommand(Tr('Ações / Assistente IA'), procedure begin FAssistant.Open; end, HeroIcon('fire'));
   for P := Low(TPage) to High(TPage) do
-    FPalette.AddItem('page:' + IntToStr(Ord(P)), 'Ir para ' + PageTitles[P], '', 'Navegar');
+    FPalette.AddItem('page:' + IntToStr(Ord(P)), Tr('Ir para ') + Tr(PageTitles[P]), '', Tr('Navegar'));
   for I := 0 to High(FAll) do
   begin
     It := FAll[I];
     if not ItemInView(It) then
       Continue;
     FPalette.AddItem('issue:' + It.Key + '|' + IntToStr(It.AccountId),
-      It.Key + '  ' + It.Title, '', 'Issues');
+      It.Key + '  ' + It.Title, '', Tr('Issues'));
   end;
 end;
 
@@ -1789,11 +1895,11 @@ begin
   for A in FAccounts do
   begin
     if not A.Enabled then
-      State := 'desligada'
+      State := Tr('desligada')
     else if FAccountErrors.ContainsKey(A.Id) then
-      State := 'com erro na última busca'
+      State := Tr('com erro na última busca')
     else
-      State := 'ligada';
+      State := Tr('ligada');
     Card := TUICard.Create(Self);
     Card.Variant := cvOutlined;
     Card.Clickable := True;
@@ -1824,16 +1930,16 @@ begin
     Lbl.Parent := Card;
     Lbl.SetBounds(ScaleValue(84), ScaleValue(18), ScaleValue(360), ScaleValue(22));
     Lbl := TUILabel.Create(Self);
-    Lbl.Caption := ProviderNames[A.Kind] + '  ·  ' + A.BaseUrl;
+    Lbl.Caption := Tr(ProviderNames[A.Kind]) + '  ·  ' + A.BaseUrl;
     Lbl.Variant := lvMuted;
     Lbl.Parent := Card;
     Lbl.SetBounds(ScaleValue(84), ScaleValue(42), ScaleValue(360), ScaleValue(18));
     Last := Store.LastPoll(A.Id);
     Lbl := TUILabel.Create(Self);
     if Last > 0 then
-      Lbl.Caption := State + '  ·  última busca ' + FormatDateTime('dd/mm hh:nn', Last)
+      Lbl.Caption := State + Tr('  ·  última busca ') + FormatDateTime('dd/mm hh:nn', Last)
     else
-      Lbl.Caption := State + '  ·  ainda não buscou';
+      Lbl.Caption := State + Tr('  ·  ainda não buscou');
     Lbl.Variant := lvMuted;
     Lbl.Parent := Card;
     Lbl.SetBounds(ScaleValue(84), ScaleValue(62), ScaleValue(360), ScaleValue(18));
@@ -1849,7 +1955,7 @@ begin
     Spark.Parent := Card;
     Spark.Anchors := [akTop, akRight];
     Spark.SetBounds(Card.Width - ScaleValue(200), ScaleValue(24), ScaleValue(176), ScaleValue(48));
-    Spark.Hint := 'Avisos por dia, últimos 14 dias';
+    Spark.Hint := Tr('Avisos por dia, últimos 14 dias');
     Spark.ShowHint := True;
 
     // Os filhos não repassam o clique ao cartão: liga o mesmo handler neles.
@@ -1877,18 +1983,18 @@ var
 begin
   Found := FAccountFilter = 0;
   FAccountMenu.ClearItems;
-  FAccountMenu.AddItem('0', 'Todas as contas', HeroIcon('squares-2x2'));
+  FAccountMenu.AddItem('0', Tr('Todas as contas'), HeroIcon('squares-2x2'));
   if FAccounts <> nil then
     FAccountMenu.AddSeparator;
   for A in FAccounts do
   begin
     FAccountMenu.AddItem(IntToStr(A.Id), A.Name, HeroIcon('signal'));
-    FAccountMenu.SetItemDetail(IntToStr(A.Id), ShortProviderNames[A.Kind]);
+    FAccountMenu.SetItemDetail(IntToStr(A.Id), Tr(ShortProviderNames[A.Kind]));
     Found := Found or (A.Id = FAccountFilter);
   end;
   if not Found then
     FAccountFilter := 0;
-  FAccountBtn.Caption := 'Todas as contas  ▾';
+  FAccountBtn.Caption := Tr('Todas as contas  ▾');
   for A in FAccounts do
     if A.Id = FAccountFilter then
       FAccountBtn.Caption := A.Name + '  ▾';
@@ -1952,7 +2058,7 @@ begin
     if (FRepoFilter <> '') and not Counts.ContainsKey(FRepoFilter) then
       FRepoFilter := '';
     FRepoMenu.ClearItems;
-    FRepoMenu.AddItem('', 'Todos os repositórios', HeroIcon('squares-2x2'));
+    FRepoMenu.AddItem('', Tr('Todos os repositórios'), HeroIcon('squares-2x2'));
     FRepoMenu.SetItemDetail('', IntToStr(Length(Repos)));
     if Repos <> nil then
       FRepoMenu.AddSeparator;
@@ -1966,7 +2072,7 @@ begin
       FRepoBtn.Left := FAccountBtn.Left - 1;
     FRepoBtn.Visible := Repos <> nil;
     if FRepoFilter = '' then
-      FRepoBtn.Caption := 'Todos os repositórios  ▾'
+      FRepoBtn.Caption := Tr('Todos os repositórios  ▾')
     else
       FRepoBtn.Caption := FRepoFilter.Substring(FRepoFilter.IndexOf('/') + 1) + '  ▾';
   finally
@@ -2041,13 +2147,13 @@ procedure TMainForm.SaveApiKeyClick(Sender: TObject);
 begin
   if FApiKey.Value.Trim = '' then
   begin
-    TUIToastManager.Show('Informe a chave', ttWarning);
+    TUIToastManager.Show(Tr('Informe a chave'), ttWarning);
     Exit;
   end;
   SaveSecret(AiSecretTarget(CurrentAiConfig.Kind), '', FApiKey.Value.Trim);
   FApiKey.Value := '';
-  FApiKey.LabelText := 'Chave salva (digite para trocar)';
-  TUIToastManager.Show('Chave de ' + AiProviderNames[CurrentAiConfig.Kind] + ' salva.', ttSuccess);
+  FApiKey.LabelText := Tr('Chave salva (digite para trocar)');
+  TUIToastManager.Show(Tr('Chave de ') + AiProviderNames[CurrentAiConfig.Kind] + Tr(' salva.'), ttSuccess);
 end;
 
 { ── Issues ──────────────────────────────────────────────────────────────── }
@@ -2148,6 +2254,7 @@ begin
   UpdateAssistantContext;
   UpdateHeader;
   UpdateTrayIcon;
+  UpdateMini;
 end;
 
 procedure TMainForm.UpdateViews;
@@ -2177,62 +2284,62 @@ var
 begin
   Sb := TStringBuilder.Create;
   try
-    Sb.AppendLine('Você é o assistente do Vigia, um app de bandeja que acompanha issues do GitHub e do Jira ' +
-      'para o usuário ' + GetEnvironmentVariable('USERNAME') + '.');
-    Sb.AppendLine('Responda em português do Brasil, curto e direto, citando as chaves das issues. ' +
-      'Hoje é ' + FormatDateTime('dddd, dd/mm/yyyy hh:nn', Now) + '.');
-    Sb.AppendLine('Você tem ferramentas para agir: registrar horas, comentar, mudar status, marcar impedimento, ' +
+    Sb.AppendLine(Tr('Você é o assistente do Vigia, um app de bandeja que acompanha issues do GitHub e do Jira ' +
+      'para o usuário ') + GetEnvironmentVariable('USERNAME') + '.');
+    Sb.AppendLine(Tr('Responda em português do Brasil, curto e direto, citando as chaves das issues. ' +
+      'Hoje é ') + FormatDateTime('dddd, dd/mm/yyyy hh:nn', Now) + '.');
+    Sb.AppendLine(Tr('Você tem ferramentas para agir: registrar horas, comentar, mudar status, marcar impedimento, ' +
       'atribuir, criar issue, abrir uma issue na tela, acompanhar, criar tag e filtrar a lista. Toda escrita no ' +
       'Jira/GitHub pede confirmação do usuário na própria conversa. Use vigia_issue_details para ler descrição ' +
-      'e comentários antes de responder sobre o conteúdo de uma issue.');
+      'e comentários antes de responder sobre o conteúdo de uma issue.'));
     if FHoursWeek > 0 then
-      Sb.AppendLine(Format('Horas lançadas no Jira: %.1fh hoje, %.1fh na semana.', [FHoursToday, FHoursWeek]));
+      Sb.AppendLine(Format(Tr('Horas lançadas no Jira: %.1fh hoje, %.1fh na semana.'), [FHoursToday, FHoursWeek]));
     if Store.GetSetting('ai_eod_draft') <> '' then
     begin
-      Sb.AppendLine('Rascunho de horas de hoje (feito por você no fim do dia; o usuário pode pedir para lançar):');
+      Sb.AppendLine(Tr('Rascunho de horas de hoje (feito por você no fim do dia; o usuário pode pedir para lançar):'));
       Sb.AppendLine(Store.GetSetting('ai_eod_draft'));
     end;
     Sb.AppendLine;
-    Sb.AppendLine('## Contas');
+    Sb.AppendLine(Tr('## Contas'));
     for A in FAccounts do
     begin
       if not FAccountErrors.TryGetValue(A.Id, Err) then
         Err := '';
-      Sb.AppendFormat('- %s (%s, %s): %s; prazo laranja até %d dias, vermelho até %d dias%s',
-        [A.Name, ProviderNames[A.Kind], A.BaseUrl, IfThen(A.Enabled, 'ligada', 'desligada'),
-         A.WarnDays, A.CriticalDays, IfThen(Err <> '', '; ERRO na última busca: ' + Err, '')]);
+      Sb.AppendFormat(Tr('- %s (%s, %s): %s; prazo laranja até %d dias, vermelho até %d dias%s'),
+        [A.Name, Tr(ProviderNames[A.Kind]), A.BaseUrl, IfThen(A.Enabled, Tr('ligada'), Tr('desligada')),
+         A.WarnDays, A.CriticalDays, IfThen(Err <> '', Tr('; ERRO na última busca: ') + Err, '')]);
       Sb.AppendLine;
     end;
     Sb.AppendLine;
-    Sb.AppendLine('## Issues acompanhadas');
-    Sb.AppendLine('chave | título | status | conta | vínculo | impedida | entrega | responsável | ' +
-      'atualizada | comentários | último comentário');
+    Sb.AppendLine(Tr('## Issues acompanhadas'));
+    Sb.AppendLine(Tr('chave | título | status | conta | vínculo | impedida | entrega | responsável | ' +
+      'atualizada | comentários | último comentário'));
     for It in FAll do
     begin
       if not AccountById(It.AccountId, A) then
         Continue;
       Sb.AppendFormat('%s | %s | %s | %s | %s | %s | %s | %s | %s | %d | %s%s', [It.Key, It.Title,
         It.Status, A.Name,
-        IfThen(isAssigned in It.Sources, 'comigo', IfThen(IsManual(It), 'manual',
-          IfThen(isReview in It.Sources, 'review', 'observando'))),
-        IfThen(It.Flagged, 'sim', 'não'),
+        IfThen(isAssigned in It.Sources, Tr('comigo'), IfThen(IsManual(It), Tr('manual'),
+          IfThen(isReview in It.Sources, Tr('review'), Tr('observando')))),
+        IfThen(It.Flagged, 'sim', Tr('não')),
         IfThen(It.DueDate > 0, FormatDateTime('dd/mm/yyyy', It.DueDate), '-'),
         IfThen(It.Assignee <> '', It.Assignee, '-'),
         IfThen(It.UpdatedAt > 0, FormatDateTime('dd/mm hh:nn', TTimeZone.Local.ToLocalTime(It.UpdatedAt)), '-'),
         It.CommentCount,
         IfThen(It.LastCommentText <> '', It.LastCommentBy + ': ' +
           Copy(It.LastCommentText.Replace(#13, ' ').Replace(#10, ' '), 1, MaxCommentChars), '-'),
-        IfThen(It.CiState <> '', ' | CI ' + It.CiState + IfThen(It.CiDetail <> '', ' (' + It.CiDetail + ')', ''), '') +
+        IfThen(It.CiState <> '', Tr(' | CI ') + It.CiState + IfThen(It.CiDetail <> '', ' (' + It.CiDetail + ')', ''), '') +
         IfThen(It.Reviewers <> '', ' | ' + It.Reviewers, '') +
-        IfThen(isSprint in It.Sources, ' | sprint ativa', '')]);
+        IfThen(isSprint in It.Sources, Tr(' | sprint ativa'), '')]);
       Sb.AppendLine;
     end;
     Sb.AppendLine;
-    Sb.AppendLine('## Avisos recentes (mais novos primeiro)');
+    Sb.AppendLine(Tr('## Avisos recentes (mais novos primeiro)'));
     for E in Store.ListRecentEvents(MaxEvents) do
     begin
       Sb.AppendFormat('%s | %s | %s | %s', [FormatDateTime('dd/mm hh:nn', E.At), E.Key,
-        EventNames[E.Kind], E.Body]);
+        Tr(EventNames[E.Kind]), E.Body]);
       Sb.AppendLine;
     end;
     Result := Sb.ToString;
@@ -2260,7 +2367,7 @@ var
 begin
   Key := AArgs.GetValue<string>('key', '').Trim;
   if not FindItem(Key, AItem, AAccount) then
-    raise Exception.CreateFmt('Issue %s não está entre as acompanhadas', [Key]);
+    raise Exception.CreateFmt(Tr('Issue %s não está entre as acompanhadas'), [Key]);
 end;
 
 { Ferramentas do assistente (só com Anthropic; o provedor compatível com OpenAI
@@ -2271,7 +2378,7 @@ var
 
 begin
   D := FAssistant.Tools.Register('vigia_issue_details',
-    'Lê descrição, anexos, ligações e os últimos comentários de uma issue.',
+    Tr('Lê descrição, anexos, ligações e os últimos comentários de uma issue.'),
     function(const AArgs: TJSONObject): string
     var
       It: TItem;
@@ -2282,16 +2389,16 @@ begin
     begin
       ToolItem(AArgs, It, A);
       Info := FetchIssueInfo(A, LoadSecret(A.SecretTarget), It.Key);
-      Result := 'Descrição: ' + Copy(Info.Description, 1, 4000) + sLineBreak;
+      Result := Tr('Descrição: ') + Copy(Info.Description, 1, 4000) + sLineBreak;
       for L in Info.Links do
-        Result := Result + Format('Ligação: %s %s (%s)', [L.Kind, L.Key, L.Summary]) + sLineBreak;
+        Result := Result + Format(Tr('Ligação: %s %s (%s)'), [L.Kind, L.Key, L.Summary]) + sLineBreak;
       for C in FetchComments(A, LoadSecret(A.SecretTarget), It.Key, 10) do
-        Result := Result + Format('Comentário de %s em %s: %s', [C.Author,
+        Result := Result + Format(Tr('Comentário de %s em %s: %s'), [C.Author,
           FormatDateTime('dd/mm hh:nn', TTimeZone.Local.ToLocalTime(C.At)), Copy(C.Text, 1, 1500)]) + sLineBreak;
     end);
-  D.AddParam('key', pkString, 'Chave da issue, ex.: PROJ-123 ou dono/repo#12', True);
+  D.AddParam('key', pkString, Tr('Chave da issue, ex.: PROJ-123 ou dono/repo#12'), True);
 
-  D := FAssistant.Tools.Register('vigia_log_hours', 'Registra horas trabalhadas numa issue do Jira.',
+  D := FAssistant.Tools.Register('vigia_log_hours', Tr('Registra horas trabalhadas numa issue do Jira.'),
     function(const AArgs: TJSONObject): string
     var
       It: TItem;
@@ -2300,8 +2407,8 @@ begin
       Start: string;
     begin
       ToolItem(AArgs, It, A);
-      if A.Kind = pkGitHub then
-        raise Exception.Create('GitHub não tem registro de horas');
+      if not (A.Kind in WorklogKinds) then
+        raise Exception.Create(ShortProviderNames[A.Kind] + Tr(' não tem registro de horas pelo Vigia'));
       Day := Date;
       if AArgs.GetValue<string>('date', '') <> '' then
         Day := ISO8601ToDate(AArgs.GetValue<string>('date') + 'T00:00:00', False);
@@ -2310,15 +2417,15 @@ begin
         Day + EncodeTime(StrToIntDef(Copy(Start, 1, 2), 9), StrToIntDef(Copy(Start, 4, 2), 0), 0, 0),
         AArgs.GetValue<string>('note', ''));
       Poll(False);
-      Result := 'Horas registradas';
+      Result := Tr('Horas registradas');
     end, True);
-  D.AddParam('key', pkString, 'Chave da issue', True);
-  D.AddParam('hours', pkNumber, 'Horas, ex.: 1.5', True);
+  D.AddParam('key', pkString, Tr('Chave da issue'), True);
+  D.AddParam('hours', pkNumber, Tr('Horas, ex.: 1.5'), True);
   D.AddParam('date', pkString, 'Dia no formato yyyy-mm-dd; vazio = hoje');
-  D.AddParam('start', pkString, 'Hora de início HH:MM; vazio = 09:00');
-  D.AddParam('note', pkString, 'O que foi feito');
+  D.AddParam('start', pkString, Tr('Hora de início HH:MM; vazio = 09:00'));
+  D.AddParam('note', pkString, Tr('O que foi feito'));
 
-  D := FAssistant.Tools.Register('vigia_comment', 'Publica um comentário na issue.',
+  D := FAssistant.Tools.Register('vigia_comment', Tr('Publica um comentário na issue.'),
     function(const AArgs: TJSONObject): string
     var
       It: TItem;
@@ -2326,12 +2433,12 @@ begin
     begin
       ToolItem(AArgs, It, A);
       PostComment(A, LoadSecret(A.SecretTarget), It.Key, AArgs.GetValue<string>('text'));
-      Result := 'Comentário publicado';
+      Result := Tr('Comentário publicado');
     end, True);
-  D.AddParam('key', pkString, 'Chave da issue', True);
-  D.AddParam('text', pkString, 'Texto do comentário', True);
+  D.AddParam('key', pkString, Tr('Chave da issue'), True);
+  D.AddParam('text', pkString, Tr('Texto do comentário'), True);
 
-  D := FAssistant.Tools.Register('vigia_list_transitions', 'Lista os status para onde a issue pode ir agora.',
+  D := FAssistant.Tools.Register('vigia_list_transitions', Tr('Lista os status para onde a issue pode ir agora.'),
     function(const AArgs: TJSONObject): string
     var
       It: TItem;
@@ -2341,11 +2448,11 @@ begin
       ToolItem(AArgs, It, A);
       Result := '';
       for T in FetchTransitions(A, LoadSecret(A.SecretTarget), It.Key) do
-        Result := Result + T.ToStatus + IfThen(T.Fields <> nil, ' (pede campos na tela)', '') + sLineBreak;
+        Result := Result + T.ToStatus + IfThen(T.Fields <> nil, Tr(' (pede campos na tela)'), '') + sLineBreak;
     end);
-  D.AddParam('key', pkString, 'Chave da issue', True);
+  D.AddParam('key', pkString, Tr('Chave da issue'), True);
 
-  D := FAssistant.Tools.Register('vigia_change_status', 'Muda o status da issue (use um nome de vigia_list_transitions).',
+  D := FAssistant.Tools.Register('vigia_change_status', Tr('Muda o status da issue (use um nome de vigia_list_transitions).'),
     function(const AArgs: TJSONObject): string
     var
       It: TItem;
@@ -2359,17 +2466,17 @@ begin
         if SameText(T.ToStatus, Want) or SameText(T.Name, Want) then
         begin
           if T.Fields <> nil then
-            raise Exception.Create('Essa transição pede campos. Peça ao usuário para usar botão direito > Mudar status');
+            raise Exception.Create(Tr('Essa transição pede campos. Peça ao usuário para usar botão direito > Mudar status'));
           ApplyTransition(A, LoadSecret(A.SecretTarget), It.Key, T);
           Poll(False);
-          Exit('Status alterado para ' + T.ToStatus);
+          Exit(Tr('Status alterado para ') + T.ToStatus);
         end;
-      raise Exception.CreateFmt('Status "%s" não disponível agora', [Want]);
+      raise Exception.CreateFmt(Tr('Status "%s" não disponível agora'), [Want]);
     end, True);
-  D.AddParam('key', pkString, 'Chave da issue', True);
-  D.AddParam('status', pkString, 'Status de destino', True);
+  D.AddParam('key', pkString, Tr('Chave da issue'), True);
+  D.AddParam('status', pkString, Tr('Status de destino'), True);
 
-  D := FAssistant.Tools.Register('vigia_set_impediment', 'Jira: marca ou tira impedimento (Flagged) e comenta o motivo.',
+  D := FAssistant.Tools.Register('vigia_set_impediment', Tr('Jira: marca ou tira impedimento (Flagged) e comenta o motivo.'),
     function(const AArgs: TJSONObject): string
     var
       It: TItem;
@@ -2378,13 +2485,13 @@ begin
       ToolItem(AArgs, It, A);
       SetImpediment(A, LoadSecret(A.SecretTarget), It.Key, AArgs.GetValue<Boolean>('on', True), AArgs.GetValue<string>('reason', ''));
       Poll(False);
-      Result := 'Feito';
+      Result := Tr('Feito');
     end, True);
-  D.AddParam('key', pkString, 'Chave da issue', True);
-  D.AddParam('on', pkBoolean, 'true marca, false tira', True);
-  D.AddParam('reason', pkString, 'Motivo (vira comentário)');
+  D.AddParam('key', pkString, Tr('Chave da issue'), True);
+  D.AddParam('on', pkBoolean, Tr('true marca, false tira'), True);
+  D.AddParam('reason', pkString, Tr('Motivo (vira comentário)'));
 
-  D := FAssistant.Tools.Register('vigia_assign_me', 'Atribui a issue ao usuário.',
+  D := FAssistant.Tools.Register('vigia_assign_me', Tr('Atribui a issue ao usuário.'),
     function(const AArgs: TJSONObject): string
     var
       It: TItem;
@@ -2393,11 +2500,11 @@ begin
       ToolItem(AArgs, It, A);
       AssignToMe(A, LoadSecret(A.SecretTarget), It.Key);
       Poll(False);
-      Result := 'Atribuída';
+      Result := Tr('Atribuída');
     end, True);
-  D.AddParam('key', pkString, 'Chave da issue', True);
+  D.AddParam('key', pkString, Tr('Chave da issue'), True);
 
-  D := FAssistant.Tools.Register('vigia_create_issue', 'Cria uma issue no Jira (projeto) ou GitHub (dono/repo).',
+  D := FAssistant.Tools.Register('vigia_create_issue', Tr('Cria uma issue no Jira (projeto) ou GitHub (dono/repo).'),
     function(const AArgs: TJSONObject): string
     var
       A: TAccount;
@@ -2408,19 +2515,19 @@ begin
         if SameText(A.Name, AArgs.GetValue<string>('account', '')) then
         begin
           Found := True;
-          Result := 'Criada: ' + CreateIssue(A, LoadSecret(A.SecretTarget), AArgs.GetValue<string>('where'),
+          Result := Tr('Criada: ') + CreateIssue(A, LoadSecret(A.SecretTarget), AArgs.GetValue<string>('where'),
             AArgs.GetValue<string>('title'), AArgs.GetValue<string>('body', ''));
           Break;
         end;
       if not Found then
-        raise Exception.Create('Conta não encontrada; use o nome que aparece em Contas');
+        raise Exception.Create(Tr('Conta não encontrada; use o nome que aparece em Contas'));
     end, True);
-  D.AddParam('account', pkString, 'Nome da conta no Vigia', True);
-  D.AddParam('where', pkString, 'Chave do projeto Jira ou dono/repo do GitHub', True);
-  D.AddParam('title', pkString, 'Título', True);
-  D.AddParam('body', pkString, 'Descrição');
+  D.AddParam('account', pkString, Tr('Nome da conta no Vigia'), True);
+  D.AddParam('where', pkString, Tr('Chave do projeto Jira ou dono/repo do GitHub'), True);
+  D.AddParam('title', pkString, Tr('Título'), True);
+  D.AddParam('body', pkString, Tr('Descrição'));
 
-  D := FAssistant.Tools.Register('vigia_open_issue', 'Abre o painel da issue na tela do Vigia.',
+  D := FAssistant.Tools.Register('vigia_open_issue', Tr('Abre o painel da issue na tela do Vigia.'),
     function(const AArgs: TJSONObject): string
     var
       It: TItem;
@@ -2428,19 +2535,19 @@ begin
     begin
       ToolItem(AArgs, It, A);
       OpenDetail(It);
-      Result := 'Aberta';
+      Result := Tr('Aberta');
     end);
-  D.AddParam('key', pkString, 'Chave da issue', True);
+  D.AddParam('key', pkString, Tr('Chave da issue'), True);
 
-  D := FAssistant.Tools.Register('vigia_watch', 'Passa a acompanhar uma issue pela chave (PROJ-123 ou dono/repo#12).',
+  D := FAssistant.Tools.Register('vigia_watch', Tr('Passa a acompanhar uma issue pela chave (PROJ-123 ou dono/repo#12).'),
     function(const AArgs: TJSONObject): string
     begin
       WatchKey(AArgs.GetValue<string>('key'));
-      Result := 'Acompanhando';
+      Result := Tr('Acompanhando');
     end);
-  D.AddParam('key', pkString, 'Chave da issue', True);
+  D.AddParam('key', pkString, Tr('Chave da issue'), True);
 
-  D := FAssistant.Tools.Register('vigia_create_tag', 'Cria uma #tag local que agrupa issues por palavras do título.',
+  D := FAssistant.Tools.Register('vigia_create_tag', Tr('Cria uma #tag local que agrupa issues por palavras do título.'),
     function(const AArgs: TJSONObject): string
     var
       T: TTag;
@@ -2456,13 +2563,13 @@ begin
       Store.SaveTag(T);
       ReloadTags;
       LoadItems;
-      Result := 'Tag #' + T.Name + ' criada';
+      Result := Tr('Tag #') + T.Name + Tr(' criada');
     end);
-  D.AddParam('name', pkString, 'Nome sem #', True);
-  D.AddParam('keywords', pkString, 'Palavras do título separadas por vírgula', True);
-  D.AddParam('account', pkString, 'Nome da conta; vazio = primeira');
+  D.AddParam('name', pkString, Tr('Nome sem #'), True);
+  D.AddParam('keywords', pkString, Tr('Palavras do título separadas por vírgula'), True);
+  D.AddParam('account', pkString, Tr('Nome da conta; vazio = primeira'));
 
-  D := FAssistant.Tools.Register('vigia_filter', 'Filtra a lista de Issues na tela.',
+  D := FAssistant.Tools.Register('vigia_filter', Tr('Filtra a lista de Issues na tela.'),
     function(const AArgs: TJSONObject): string
     var
       F: TItemFilter;
@@ -2472,7 +2579,7 @@ begin
       ClearFiltersClick(nil);
       Chips := AArgs.GetValue<string>('chips', '');
       for F := Low(TItemFilter) to High(TItemFilter) do
-        if ContainsText(Chips, FilterNames[F]) then
+        if ContainsText(Chips, Tr(FilterNames[F])) then
           FChips[F].Active := True;
       for I := 0 to High(FTags) do
         if SameText('#' + FTags[I].Name, AArgs.GetValue<string>('tag', '')) or
@@ -2482,19 +2589,17 @@ begin
         SetRepoFilter(AArgs.GetValue<string>('repo'));
       ShowPage(pgIssues);
       ApplyFilters;
-      Result := Format('%d issues na lista', [Length(FShown)]);
+      Result := Format(Tr('%d issues na lista'), [Length(FShown)]);
     end);
-  D.AddParam('chips', pkString, 'Filtros separados por vírgula: Comigo, Atrasadas, Review, Manuais, ' +
-    'Impedidas, Meus PRs, Sprint');
-  D.AddParam('tag', pkString, 'Nome de uma tag');
-  D.AddParam('repo', pkString, 'dono/repo do GitHub');
+  D.AddParam('chips', pkString, Tr('Filtros separados por vírgula: Comigo, Atrasadas, Review, Manuais, ' +
+    'Impedidas, Meus PRs, Sprint'));
+  D.AddParam('tag', pkString, Tr('Nome de uma tag'));
+  D.AddParam('repo', pkString, Tr('dono/repo do GitHub'));
 end;
 
 { ── IA automática (opt-in) ── }
 
 procedure TMainForm.AiAutoChange(Sender: TObject);
-const
-  Keys: array[0..3] of string = ('ai_daily', 'ai_risk', 'ai_eod', 'ai_ci');
 var
   I: Integer;
 begin
@@ -2505,7 +2610,138 @@ begin
   else
     for I := 0 to High(FAiAuto) do
       if Sender = FAiAuto[I] then
-        Store.SetSetting(Keys[I], IfThen(FAiAuto[I].Checked, '1', '0'));
+        Store.SetSetting(AiAutoKeys[I], IfThen(FAiAuto[I].Checked, '1', '0'));
+end;
+
+{ Triagem: a IA sugere uma das tags da conta e a prioridade. A sugestão fica
+  guardada por issue; aplicar é decisão do usuário (botão direito › Ações). }
+procedure TMainForm.TriageItems(const AItems: TItems; AManual: Boolean);
+const
+  MaxAuto = 3;
+var
+  It: TItem;
+  T: TTag;
+  A: TAccount;
+  TagList, Prompt: string;
+  N: Integer;
+begin
+  N := 0;
+  for It in AItems do
+  begin
+    if not AManual and (N >= MaxAuto) then
+      Break;
+    if not AccountById(It.AccountId, A) then
+      Continue;
+    TagList := '';
+    for T in FTags do
+      if T.AccountId = It.AccountId then
+        TagList := TagList + Format(Tr('- %s (palavras: %s)'), [T.Name, T.Keywords]) + sLineBreak;
+    Prompt := Format(Tr('Issue %s no %s: "%s". Status: %s. Prazo: %s. Responsável: %s.'), [It.Key,
+      Tr(ShortProviderNames[A.Kind]), It.Title, It.Status, IfThen(It.DueDate > 0,
+      FormatDateTime('dd/mm/yyyy', It.DueDate), Tr('sem')), IfThen(It.Assignee <> '', It.Assignee, Tr('ninguém'))]) +
+      sLineBreak + Tr('Tags do usuário:') + sLineBreak + IfThen(TagList <> '', TagList, Tr('(nenhuma)') + sLineBreak) +
+      'Responda só um JSON: {"tag": "nome de uma das tags ou vazio", "prioridade": "Alta, Média ou Baixa", ' +
+      '"motivo": "até 15 palavras"}';
+    Inc(N);
+    AiAsk(Tr('Você faz triagem de issues para um desenvolvedor. Seja direto. Responda só o JSON pedido.'),
+      Prompt, True,
+      procedure(AText: string)
+      var
+        J: TJSONValue;
+        Json, Tag, Prio, Why: string;
+      begin
+        // O modelo às vezes cerca o JSON com texto: pega do primeiro { ao último }.
+        Json := Copy(AText, Pos('{', AText), LastDelimiter('}', AText) - Pos('{', AText) + 1);
+        J := TJSONObject.ParseJSONValue(Json);
+        try
+          if not (J is TJSONObject) then
+          begin
+            if AManual then
+              TUIToastManager.Show(Tr('A IA não devolveu uma sugestão válida'), ttWarning);
+            Exit;
+          end;
+          Tag := J.GetValue<string>('tag', '').TrimLeft(['#']).Trim;
+          Prio := J.GetValue<string>('prioridade', '').Trim;
+          Why := J.GetValue<string>('motivo', '').Trim;
+        finally
+          J.Free;
+        end;
+        Store.SetSetting(TriageSettingName(It.AccountId, It.Key), Json);
+        if AManual then
+          TUIToastManager.Show(Format('%s: %s%s · %s', [It.Key, IfThen(Tag <> '', '#' + Tag + ' · ', ''),
+            Prio, Why]), ttInfo, 8000)
+        else
+          Notify(Tr('Triagem · ') + It.Key, Format('%s%s · %s', [IfThen(Tag <> '', '#' + Tag + ' · ', ''), Prio,
+            Why]), '', stInfo, It.Key, It.AccountId);
+        if FDetail.Visible and SameText(FDetail.Item.Key, It.Key) and AccountById(It.AccountId, A) then
+          FDetail.ShowItem(FDetail.Item, A);
+      end,
+      procedure(AErr: string)
+      begin
+        if AManual then
+          TUIToastManager.Show(Tr('Triagem: ') + AErr, ttError, 6000);
+      end);
+  end;
+end;
+
+{ Aplica a sugestão: marca a tag local e, no Jira, muda a prioridade (com confirmação). }
+procedure TMainForm.ApplyTriage(const AItem: TItem);
+var
+  J: TJSONValue;
+  Tag, Prio, Pick: string;
+  T: TTag;
+  A: TAccount;
+  It: TItem;
+  Found: Boolean;
+begin
+  J := TJSONObject.ParseJSONValue(Store.GetSetting(TriageSettingName(AItem.AccountId, AItem.Key)));
+  try
+    if J = nil then
+      Exit;
+    Tag := J.GetValue<string>('tag', '').TrimLeft(['#']).Trim;
+    Prio := J.GetValue<string>('prioridade', '').Trim;
+  finally
+    J.Free;
+  end;
+  It := AItem;
+  Found := False;
+  if Tag <> '' then
+    for T in FTags do
+      if (T.AccountId = AItem.AccountId) and SameText(T.Name, Tag) then
+      begin
+        Store.SetItemTag(T.Id, AItem.AccountId, AItem.Key, True);
+        Found := True;
+      end;
+  if Found then
+    TUIToastManager.Show(AItem.Key + Tr(' marcada com #') + Tag, ttSuccess);
+  LoadItems;
+  if (Prio = '') or not AccountById(AItem.AccountId, A) or not (A.Kind in JiraKinds) then
+    Exit;
+  if not AskConfirm(Self, Tr('Prioridade'), Format(Tr('Mudar a prioridade de %s para "%s" no Jira?'),
+    [AItem.Key, Prio]), Tr('Mudar')) then
+    Exit;
+  RunAction(It, Tr('Prioridade de ') + AItem.Key + Tr(' alterada'),
+    procedure(AAcc: TAccount; AToken: string)
+    var
+      Names: TArray<string>;
+      N: string;
+    begin
+      // Nome do Jira pode estar em inglês: casa "Alta" com "High" pela posição usual.
+      Names := FetchPriorities(AAcc, AToken);
+      Pick := '';
+      for N in Names do
+        if ContainsText(N, Prio) or
+          (SameText(Prio, 'Alta') and ContainsText(N, 'High')) or
+          ((Prio.StartsWith('M', True)) and ContainsText(N, 'Medium')) or
+          (SameText(Prio, 'Baixa') and ContainsText(N, 'Low')) then
+        begin
+          Pick := N;
+          Break;
+        end;
+      if Pick = '' then
+        raise Exception.Create(Tr('Prioridade "') + Prio + Tr('" não existe neste Jira'));
+      SetPriority(AAcc, AToken, AItem.Key, Pick);
+    end);
 end;
 
 { PR com CI vermelho: lê o fim do log do job e pede a causa provável. }
@@ -2533,13 +2769,13 @@ begin
       TThread.Queue(nil,
         procedure
         begin
-          AiAsk('Você analisa falhas de CI. Responda em português, em até 3 frases curtas: causa provável e ' +
-            'o que fazer. Sem markdown.', 'Job "' + It.CiDetail + '" do PR ' + It.Key + ' falhou. Fim do log:' +
+          AiAsk(Tr('Você analisa falhas de CI. Responda em português, em até 3 frases curtas: causa provável e ' +
+            'o que fazer. Sem markdown.'), Tr('Job "') + It.CiDetail + Tr('" do PR ') + It.Key + Tr(' falhou. Fim do log:') +
             sLineBreak + Log, True,
             procedure(AText: string)
             begin
               Store.SetSetting('ai_ci_' + It.Key, AText);
-              Notify('CI de ' + It.Key + ' · causa provável', AText, It.CiUrl, stError, It.Key, It.AccountId);
+              Notify(Tr('CI de ') + It.Key + Tr(' · causa provável'), AText, It.CiUrl, stError, It.Key, It.AccountId);
             end);
         end);
     end);
@@ -2559,29 +2795,29 @@ begin
   if (Store.GetSetting('ai_risk') = '1') and (Store.GetSetting('ai_risk_last') <> Today) then
   begin
     Store.SetSetting('ai_risk_last', Today);
-    AiAsk(BuildAiContext, 'Aponte até 3 issues com maior risco de atrasar ou travar (prazo perto, impedida, ' +
+    AiAsk(BuildAiContext, Tr('Aponte até 3 issues com maior risco de atrasar ou travar (prazo perto, impedida, ' +
       'parada há dias, CI falhando). Uma linha por issue: chave e motivo. Se não houver risco real, ' +
-      'responda só NADA.', True,
+      'responda só NADA.'), True,
       procedure(AText: string)
       begin
         if not SameText(AText, 'NADA') then
-          Notify('Vigia · riscos de hoje', AText, '', stWarning, '*dashboard');
+          Notify(Tr('Vigia · riscos de hoje'), AText, '', stWarning, '*dashboard');
       end);
   end;
   if (Store.GetSetting('ai_eod') = '1') and (Frac(Now) >= EodTime) and
     (Store.GetSetting('ai_eod_last') <> Today) and (DayOfTheWeek(Date) <= 5) then
   begin
     Store.SetSetting('ai_eod_last', Today);
-    AiAsk(BuildAiContext, Format('Fim do dia. Já lancei %.1fh hoje. Pelos avisos e issues de hoje, rascunhe ' +
+    AiAsk(BuildAiContext, Format(Tr('Fim do dia. Já lancei %.1fh hoje. Pelos avisos e issues de hoje, rascunhe ' +
       'lançamentos de horas que faltam: uma linha por issue no formato "CHAVE · horas · o que foi feito". ' +
-      'Se não houver o que lançar, responda só NADA.', [FHoursToday]), True,
+      'Se não houver o que lançar, responda só NADA.'), [FHoursToday]), True,
       procedure(AText: string)
       begin
         if SameText(AText, 'NADA') then
           Exit;
         Store.SetSetting('ai_eod_draft', AText);
-        Notify('Vigia · rascunho de horas', AText + sLineBreak +
-          'Peça ao assistente: "lance o rascunho de horas".', '', stInfo, '*dashboard');
+        Notify(Tr('Vigia · rascunho de horas'), AText + sLineBreak +
+          Tr('Peça ao assistente: "lance o rascunho de horas".'), '', stInfo, '*dashboard');
       end);
   end;
 end;
@@ -2638,6 +2874,7 @@ begin
     if It.Flagged then Inc(Counts[ifFlagged]);
     if isMine in It.Sources then Inc(Counts[ifMyPrs]);
     if isSprint in It.Sources then Inc(Counts[ifSprint]);
+    if NeedsActionNow(It) then Inc(Counts[ifNow]);
     for T := 0 to High(FTags) do
       if FTags[T].Matches(It) then
         Inc(TagCounts[T]);
@@ -2664,54 +2901,55 @@ begin
         (FChips[ifManual].Active and IsManual(It)) or
         (FChips[ifFlagged].Active and It.Flagged) or
         (FChips[ifMyPrs].Active and (isMine in It.Sources)) or
-        (FChips[ifSprint].Active and (isSprint in It.Sources));
+        (FChips[ifSprint].Active and (isSprint in It.Sources)) or
+        (FChips[ifNow].Active and NeedsActionNow(It));
       if not Pass then
         Continue;
     end;
 
     if IsOverdue(It) then
     begin
-      Tag := 'atrasada';
+      Tag := Tr('atrasada');
       Tone := btError;
     end
     else if isAssigned in It.Sources then
     begin
-      Tag := 'comigo';
+      Tag := Tr('comigo');
       Tone := btPrimary;
     end
     else if isReview in It.Sources then
     begin
-      Tag := 'review';
+      Tag := Tr('review');
       Tone := btInfo;
     end
     else if isMine in It.Sources then
     begin
-      Tag := 'meu PR';
+      Tag := Tr('meu PR');
       Tone := btSuccess;
     end
     else if isMention in It.Sources then
     begin
-      Tag := 'mencionado';
+      Tag := Tr('mencionado');
       Tone := btWarning;
     end
     else if isQuery in It.Sources then
     begin
-      Tag := 'busca';
+      Tag := Tr('busca');
       Tone := btNeutral;
     end
     else if isOwnRepo in It.Sources then
     begin
-      Tag := 'meu repo';
+      Tag := Tr('meu repo');
       Tone := btNeutral;
     end
     else if IsManual(It) then
     begin
-      Tag := 'manual';
+      Tag := Tr('manual');
       Tone := btWarning;
     end
     else
     begin
-      Tag := 'observando';
+      Tag := Tr('observando');
       Tone := btNeutral;
     end;
 
@@ -2724,22 +2962,22 @@ begin
     if It.Status <> '' then
       Badges := Badges + [Badge(It.Status, StatusTone(It.StatusCategory))];
     if It.Flagged then
-      Badges := Badges + [Badge('Impedida', btError)];
+      Badges := Badges + [Badge(Tr('Impedida'), btError)];
     if SameText(It.ReviewState, 'APPROVED') then
-      Badges := Badges + [Badge('Aprovado', btSuccess)]
+      Badges := Badges + [Badge(Tr('Aprovado'), btSuccess)]
     else if SameText(It.ReviewState, 'CHANGES_REQUESTED') then
-      Badges := Badges + [Badge('Mudanças pedidas', btWarning)];
+      Badges := Badges + [Badge(Tr('Mudanças pedidas'), btWarning)];
     if MatchText(It.CiState, ['FAILURE', 'ERROR']) then
-      Badges := Badges + [Badge('CI falhou', btError)]
+      Badges := Badges + [Badge(Tr('CI falhou'), btError)]
     else if MatchText(It.CiState, ['PENDING', 'EXPECTED']) then
-      Badges := Badges + [Badge('CI rodando', btInfo)]
+      Badges := Badges + [Badge(Tr('CI rodando'), btInfo)]
     else if SameText(It.CiState, 'SUCCESS') then
-      Badges := Badges + [Badge('CI ok', btSuccess)];
+      Badges := Badges + [Badge(Tr('CI ok'), btSuccess)];
     if (It.DueDate > 0) and AccountById(It.AccountId, A) then
-      Badges := Badges + [Badge(IfThen(A.DueField <> '', 'Entrega ', 'Prazo ') +
+      Badges := Badges + [Badge(IfThen(A.DueField <> '', Tr('Entrega '), Tr('Prazo ')) +
         FormatDateTime('dd/mm', It.DueDate), DueTone(It.DueDate, A))];
     if FMuted.ContainsKey(KeyOf(It)) then
-      Badges := Badges + [Badge('silenciada', btGhost)];
+      Badges := Badges + [Badge(Tr('silenciada'), btGhost)];
 
     // A lista só desenha fundo, hover e seleção; as 3 linhas vêm do OnCustomDraw.
     V := Default(TUIVListItem);
@@ -2783,16 +3021,16 @@ begin
   begin
     if FAccounts = nil then
     begin
-      FItemsEmpty.Title := 'Nenhuma conta ainda';
-      FItemsEmpty.Description := 'Cadastre uma conta do GitHub ou do Jira em Contas.';
-      FItemsEmpty.ActionLabel := 'Nova conta';
+      FItemsEmpty.Title := Tr('Nenhuma conta ainda');
+      FItemsEmpty.Description := Tr('Cadastre uma conta do GitHub ou do Jira em Contas.');
+      FItemsEmpty.ActionLabel := Tr('Nova conta');
       FItemsEmpty.OnAction := NewAccountClick;
     end
     else if FAll = nil then
     begin
-      FItemsEmpty.Title := 'Nada acompanhado ainda';
-      FItemsEmpty.Description := 'A lista enche depois da primeira busca.';
-      FItemsEmpty.ActionLabel := 'Atualizar agora';
+      FItemsEmpty.Title := Tr('Nada acompanhado ainda');
+      FItemsEmpty.Description := Tr('A lista enche depois da primeira busca.');
+      FItemsEmpty.ActionLabel := Tr('Atualizar agora');
       FItemsEmpty.OnAction := RefreshClick;
     end
     else
@@ -2801,7 +3039,7 @@ begin
       Active := '';
       for F := Low(TItemFilter) to High(TItemFilter) do
         if FChips[F].Active then
-          Active := Active + IfThen(Active <> '', ', ') + FilterNames[F];
+          Active := Active + IfThen(Active <> '', ', ') + Tr(FilterNames[F]);
       for T := 0 to High(FTagChips) do
         if FTagChips[T].Active then
           Active := Active + IfThen(Active <> '', ', ') + '#' + FTags[T].Name;
@@ -2809,10 +3047,10 @@ begin
         Active := Active + IfThen(Active <> '', ', ') + FDrill.Caption;
       if FRepoFilter <> '' then
         Active := Active + IfThen(Active <> '', ', ') + FRepoFilter;
-      FItemsEmpty.Title := 'Nada com esse filtro';
-      FItemsEmpty.Description := IfThen(Active <> '', 'Filtrando por: ' + Active + '.',
-        'Nenhuma issue nesta conta.');
-      FItemsEmpty.ActionLabel := IfThen(Active <> '', 'Limpar filtros', '');
+      FItemsEmpty.Title := Tr('Nada com esse filtro');
+      FItemsEmpty.Description := IfThen(Active <> '', Tr('Filtrando por: ') + Active + '.',
+        Tr('Nenhuma issue nesta conta.'));
+      FItemsEmpty.ActionLabel := IfThen(Active <> '', Tr('Limpar filtros'), '');
       FItemsEmpty.OnAction := ClearFiltersClick;
     end;
   end;
@@ -2960,11 +3198,11 @@ begin
   UIDrawText(ACanvas, H.Key, TRectF.Create(X, Cy - 12, ARowRect.Right - 200, Cy + 12), NameFont, T.Color.FG);
   Badges := [Badge(Format('%d', [H.CommentCount]), btNeutral)];
   if H.DueAlert > 0 then
-    Badges := Badges + [Badge(Format('%d atrasada(s)', [H.DueAlert]), btError)];
+    Badges := Badges + [Badge(Format(Tr('%d atrasada(s)'), [H.DueAlert]), btError)];
   if StrToIntDef(H.LastCommentText, 0) > 0 then
-    Badges := Badges + [Badge(H.LastCommentText + ' impedida(s)', btWarning)];
+    Badges := Badges + [Badge(H.LastCommentText + Tr(' impedida(s)'), btWarning)];
   DrawBadgeRow(ACanvas, X + UITextWidth(H.Key, NameFont) + 12, Cy, Badges, ARowRect.Right - 14);
-  Sub := IfThen(FCollapsed.ContainsKey(H.Key), 'recolhido · clique para abrir', '');
+  Sub := IfThen(FCollapsed.ContainsKey(H.Key), Tr('recolhido · clique para abrir'), '');
   if Sub <> '' then
     UIDrawText(ACanvas, Sub, TRectF.Create(ARowRect.Right - 220, Cy - 10, ARowRect.Right - 14, Cy + 10),
       SubFont, T.Color.FGMuted, UI.Painter.taRight);
@@ -3027,7 +3265,7 @@ var
   T: TTag;
 begin
   FTagMenu.ClearItems;
-  FTagMenu.AddItem('tag-manage', 'Gerenciar tags...', HeroIcon('squares-plus'));
+  FTagMenu.AddItem('tag-manage', Tr('Gerenciar tags...'), HeroIcon('squares-plus'));
   if FTags <> nil then
     FTagMenu.AddSeparator;
   for T in FTags do
@@ -3036,32 +3274,43 @@ begin
     else if T.HasManual(AItem.AccountId, AItem.Key) then
       FTagMenu.AddItem('tag:' + IntToStr(T.Id), '#' + T.Name, Check)
     else if T.ByKeyword(AItem.Title) then
-      FTagMenu.AddItem('tag:' + IntToStr(T.Id), '#' + T.Name + '  (pelo título)', Check)
+      FTagMenu.AddItem('tag:' + IntToStr(T.Id), '#' + T.Name + Tr('  (pelo título)'), Check)
     else
       FTagMenu.AddItem('tag:' + IntToStr(T.Id), '#' + T.Name);
 end;
 
 procedure TMainForm.FillActionMenu(const AItem: TItem);
+var
+  A: TAccount;
 begin
   FActionMenu.ClearItems;
-  FActionMenu.AddItem('act-assign', 'Atribuir a mim', HeroIcon('arrow-down-tray'));
-  if Pos('#', AItem.Key) > 0 then
+  if not AccountById(AItem.AccountId, A) then
+    Exit;
+  FActionMenu.AddItem('act-assign', Tr('Atribuir a mim'), HeroIcon('arrow-down-tray'));
+  FActionMenu.AddItem('act-triage', Tr('Triar com IA'), HeroIcon('bolt'));
+  if Store.GetSetting(TriageSettingName(AItem.AccountId, AItem.Key)) <> '' then
+    FActionMenu.AddItem('act-triage-apply', Tr('Aplicar sugestão da IA'), HeroIcon('check-circle'));
+  if A.Kind in WorklogKinds then
+    FActionMenu.AddItem('act-log', Tr('Registrar horas...'), HeroIcon('clock'));
+  if not (A.Kind in JiraKinds) then
   begin
-    FActionMenu.AddItem('act-label', 'Adicionar label...', HeroIcon('squares-plus'));
-    if Pos('/pull/', AItem.Url) > 0 then
-      FActionMenu.AddItem('act-approve', 'Aprovar PR', HeroIcon('check-circle'));
+    FActionMenu.AddItem('act-label', IfThen(A.Kind = pkAzure, Tr('Adicionar tag...'), Tr('Adicionar label...')),
+      HeroIcon('squares-plus'));
+    // PR do GitHub (/pull/) ou MR do GitLab (chave com '!').
+    if (Pos('/pull/', AItem.Url) > 0) or (Pos('!', AItem.Key) > 0) then
+      FActionMenu.AddItem('act-approve', IfThen(A.Kind = pkGitLab, Tr('Aprovar MR'), Tr('Aprovar PR')),
+        HeroIcon('check-circle'));
     if AItem.CiUrl <> '' then
-      FActionMenu.AddItem('act-ci', 'Abrir job que falhou', HeroIcon('x-circle'));
+      FActionMenu.AddItem('act-ci', Tr('Abrir job que falhou'), HeroIcon('x-circle'));
   end
   else
   begin
-    FActionMenu.AddItem('act-log', 'Registrar horas...', HeroIcon('clock'));
-    FActionMenu.AddItem('act-priority', 'Mudar prioridade...', HeroIcon('arrow-trending-up'));
-    FActionMenu.AddItem('act-label', 'Adicionar label...', HeroIcon('squares-plus'));
+    FActionMenu.AddItem('act-priority', Tr('Mudar prioridade...'), HeroIcon('arrow-trending-up'));
+    FActionMenu.AddItem('act-label', Tr('Adicionar label...'), HeroIcon('squares-plus'));
     if AItem.Flagged then
-      FActionMenu.AddItem('act-unflag', 'Tirar impedimento...', HeroIcon('check-circle'))
+      FActionMenu.AddItem('act-unflag', Tr('Tirar impedimento...'), HeroIcon('check-circle'))
     else
-      FActionMenu.AddItem('act-flag', 'Marcar impedimento...', HeroIcon('exclamation-triangle'));
+      FActionMenu.AddItem('act-flag', Tr('Marcar impedimento...'), HeroIcon('exclamation-triangle'));
   end;
 end;
 
@@ -3093,7 +3342,7 @@ begin
             Poll(False);
           end
           else
-            TUIToastManager.Show('Não deu certo: ' + Err, ttError, 6000);
+            TUIToastManager.Show(Tr('Não deu certo: ') + Err, ttError, 6000);
         end);
     end);
 end;
@@ -3215,6 +3464,7 @@ begin
     procedure(const AValue: Single)
     begin
       FDetail.Width := Round(AValue);
+      PlaceAssistant;
     end;
   FDetailAnim.OnComplete :=
     procedure
@@ -3224,6 +3474,7 @@ begin
         FDetail.Visible := False;
         FDetail.Width := ScaleValue(DetailWidth);
       end;
+      PlaceAssistant;
     end;
   FDetailAnim.Start;
 end;
@@ -3271,27 +3522,27 @@ begin
   FItemMenu.ClearItems;
   if not SelectedItem(It) then
     Exit;
-  FItemMenu.AddItem('detail', 'Ver detalhes', HeroIcon('information-circle'));
-  FItemMenu.AddItem('status', 'Mudar status...', HeroIcon('arrow-path'));
-  FItemMenu.AddItem('open', 'Abrir no navegador', HeroIcon('arrow-trending-up'));
-  FItemMenu.AddItem('copy', 'Copiar chave', HeroIcon('squares-plus'));
+  FItemMenu.AddItem('detail', Tr('Ver detalhes'), HeroIcon('information-circle'));
+  FItemMenu.AddItem('status', Tr('Mudar status...'), HeroIcon('arrow-path'));
+  FItemMenu.AddItem('open', Tr('Abrir no navegador'), HeroIcon('arrow-trending-up'));
+  FItemMenu.AddItem('copy', Tr('Copiar chave'), HeroIcon('squares-plus'));
   FillActionMenu(It);
-  FItemMenu.AddSubmenu('act-sub', 'Ações', FActionMenu, HeroIcon('bolt'));
+  FItemMenu.AddSubmenu('act-sub', Tr('Ações'), FActionMenu, HeroIcon('bolt'));
   FItemMenu.AddSeparator;
   if FMuted.ContainsKey(KeyOf(It)) then
-    FItemMenu.AddItem('unmute', 'Reativar avisos', HeroIcon('bolt'))
+    FItemMenu.AddItem('unmute', Tr('Reativar avisos'), HeroIcon('bolt'))
   else
   begin
-    FItemMenu.AddItem('mute-day', 'Silenciar até amanhã', HeroIcon('clock'));
-    FItemMenu.AddItem('mute-status', 'Silenciar até mudar status', HeroIcon('signal'));
+    FItemMenu.AddItem('mute-day', Tr('Silenciar até amanhã'), HeroIcon('clock'));
+    FItemMenu.AddItem('mute-status', Tr('Silenciar até mudar status'), HeroIcon('signal'));
   end;
   FItemMenu.AddSeparator;
   FillTagMenu(It);
-  FItemMenu.AddSubmenu('tag-sub', 'Tag', FTagMenu, HeroIcon('squares-2x2'));
+  FItemMenu.AddSubmenu('tag-sub', Tr('Tag'), FTagMenu, HeroIcon('squares-2x2'));
   if IsManual(It) then
   begin
     FItemMenu.AddSeparator;
-    FItemMenu.AddItem('unwatch', 'Parar de acompanhar', HeroIcon('x-circle'), True);
+    FItemMenu.AddItem('unwatch', Tr('Parar de acompanhar'), HeroIcon('x-circle'), True);
   end;
 end;
 
@@ -3314,16 +3565,17 @@ begin
         if B >= 0 then
         begin
           Txt := FShownBadges[I][B].Text;
-          if Txt = 'Impedida' then
-            Tip := 'Marcada com Flagged no Jira: alguém sinalizou um impedimento.'
+          if Txt = Tr('Impedida') then
+            Tip := Tr('Marcada com Flagged no Jira: alguém sinalizou um impedimento.')
           else if (Txt.StartsWith('Entrega') or Txt.StartsWith('Prazo')) and
             AccountById(FShown[I].AccountId, A) then
-            Tip := Format('Faltam %d dia(s). Laranja com %d, vermelho com %d.',
+            Tip := Format(Tr('Faltam %d dia(s). Laranja com %d, vermelho com %d.'),
               [Trunc(DateOf(FShown[I].DueDate) - Date), A.WarnDays, A.CriticalDays])
-          else if Txt = 'silenciada' then
-            Tip := 'Sem avisos desta issue até o prazo do silêncio. Botão direito para reativar.'
+          else if Txt = Tr('silenciada') then
+            Tip := Tr('Sem avisos desta issue até o prazo do silêncio. Botão direito para reativar.')
           else if SameText(Txt, FShown[I].Status) then
-            Tip := 'Status no ' + IfThen(Pos('#', FShown[I].Key) > 0, 'GitHub', 'Jira') + ': ' + Txt;
+            Tip := Tr('Status no ') + IfThen(AccountById(FShown[I].AccountId, A), Tr(ShortProviderNames[A.Kind]), '') +
+              ': ' + Txt;
         end;
       end;
       Break;
@@ -3357,15 +3609,15 @@ begin
   begin
     if AccountById(It.AccountId, A) and ChangeStatus(Self, A, It) then
     begin
-      TUIToastManager.Show('Status de ' + It.Key + ' alterado', ttSuccess);
+      TUIToastManager.Show(Tr('Status de ') + It.Key + Tr(' alterado'), ttSuccess);
       Poll(False);
     end;
   end
   else if AID = 'act-assign' then
   begin
-    if AskConfirm(Self, 'Atribuir a mim', Format('Atribuir %s a você no %s?',
-      [It.Key, IfThen(Pos('#', It.Key) > 0, 'GitHub', 'Jira')]), 'Atribuir') then
-      RunAction(It, It.Key + ' atribuída a você',
+    if AccountById(It.AccountId, A) and AskConfirm(Self, Tr('Atribuir a mim'), Format(Tr('Atribuir %s a você no %s?'),
+      [It.Key, Tr(ShortProviderNames[A.Kind])]), Tr('Atribuir')) then
+      RunAction(It, It.Key + Tr(' atribuída a você'),
         procedure(AAcc: TAccount; AToken: string)
         begin
           AssignToMe(AAcc, AToken, It.Key);
@@ -3374,8 +3626,8 @@ begin
   else if AID = 'act-label' then
   begin
     Lbl := '';
-    if AskText(Self, 'Adicionar label', 'A label entra em ' + It.Key + '.', 'Label', Lbl) then
-      RunAction(It, Format('Label "%s" adicionada em %s', [Lbl, It.Key]),
+    if AskText(Self, Tr('Adicionar label'), Tr('A label entra em ') + It.Key + '.', Tr('Label'), Lbl) then
+      RunAction(It, Format(Tr('Label "%s" adicionada em %s'), [Lbl, It.Key]),
         procedure(AAcc: TAccount; AToken: string)
         begin
           AddLabel(AAcc, AToken, It.Key, Lbl);
@@ -3383,8 +3635,8 @@ begin
   end
   else if AID = 'act-approve' then
   begin
-    if AskConfirm(Self, 'Aprovar PR', 'Enviar aprovação para ' + It.Key + '?', 'Aprovar') then
-      RunAction(It, It.Key + ' aprovado',
+    if AskConfirm(Self, Tr('Aprovar PR'), Tr('Enviar aprovação para ') + It.Key + '?', Tr('Aprovar')) then
+      RunAction(It, It.Key + Tr(' aprovado'),
         procedure(AAcc: TAccount; AToken: string)
         begin
           ApprovePr(AAcc, AToken, It.Key);
@@ -3392,6 +3644,10 @@ begin
   end
   else if AID = 'act-ci' then
     OpenUrl(It.CiUrl)
+  else if AID = 'act-triage' then
+    TriageItems([It], True)
+  else if AID = 'act-triage-apply' then
+    ApplyTriage(It)
   else if AID = 'act-log' then
   begin
     if AccountById(It.AccountId, A) and LogTime(Self, A, It) then
@@ -3406,15 +3662,15 @@ begin
     except
       on E: Exception do
       begin
-        TUIToastManager.Show('Não carregou as prioridades: ' + E.Message, ttError, 6000);
+        TUIToastManager.Show(Tr('Não carregou as prioridades: ') + E.Message, ttError, 6000);
         Exit;
       end;
     end;
     Idx := -1;
-    if AskChoice(Self, 'Mudar prioridade', 'Nova prioridade de ' + It.Key + '.', 'Prioridade', Names, Idx) then
+    if AskChoice(Self, Tr('Mudar prioridade'), Tr('Nova prioridade de ') + It.Key + '.', Tr('Prioridade'), Names, Idx) then
     begin
       Lbl := Names[Idx];
-      RunAction(It, Format('Prioridade de %s: %s', [It.Key, Lbl]),
+      RunAction(It, Format(Tr('Prioridade de %s: %s'), [It.Key, Lbl]),
         procedure(AAcc: TAccount; AToken: string)
         begin
           SetPriority(AAcc, AToken, It.Key, Lbl);
@@ -3425,10 +3681,10 @@ begin
   begin
     Lbl := '';
     On_ := AID = 'act-flag';
-    if AskText(Self, IfThen(On_, 'Marcar impedimento', 'Tirar impedimento'),
-      IfThen(On_, 'Marca Flagged em ', 'Tira o Flagged de ') + It.Key +
-      ' e comenta o motivo na issue.', 'Motivo', Lbl) then
-      RunAction(It, IfThen(On_, It.Key + ' marcada como impedida', 'Impedimento de ' + It.Key + ' removido'),
+    if AskText(Self, IfThen(On_, Tr('Marcar impedimento'), Tr('Tirar impedimento')),
+      IfThen(On_, Tr('Marca Flagged em '), Tr('Tira o Flagged de ')) + It.Key +
+      Tr(' e comenta o motivo na issue.'), Tr('Motivo'), Lbl) then
+      RunAction(It, IfThen(On_, It.Key + Tr(' marcada como impedida'), Tr('Impedimento de ') + It.Key + Tr(' removido')),
         procedure(AAcc: TAccount; AToken: string)
         begin
           SetImpediment(AAcc, AToken, It.Key, On_, Lbl);
@@ -3447,7 +3703,7 @@ begin
       if T.Id = StrToIntDef(AID.Substring(4), 0) then
       begin
         if T.ByKeyword(It.Title) and not T.HasManual(It.AccountId, It.Key) then
-          TUIToastManager.Show(Format('%s entra em "%s" pelo título. Mude as palavras em Gerenciar tags.',
+          TUIToastManager.Show(Format(Tr('%s entra em "%s" pelo título. Mude as palavras em Gerenciar tags.'),
             [It.Key, T.Name]), ttInfo, 5000)
         else
           Store.SetItemTag(T.Id, It.AccountId, It.Key, not T.HasManual(It.AccountId, It.Key));
@@ -3458,19 +3714,19 @@ begin
   begin
     // Amanhã às 8h: o silêncio cobre o resto do dia e a noite.
     Store.Mute(It.AccountId, It.Key, Trunc(Now) + 1 + 8 / 24, '');
-    TUIToastManager.Show(It.Key + ' silenciada até amanhã às 8h', ttInfo);
+    TUIToastManager.Show(It.Key + Tr(' silenciada até amanhã às 8h'), ttInfo);
     LoadItems;
   end
   else if AID = 'mute-status' then
   begin
     Store.Mute(It.AccountId, It.Key, 0, It.Status);
-    TUIToastManager.Show(It.Key + ' silenciada até sair de "' + It.Status + '"', ttInfo);
+    TUIToastManager.Show(It.Key + Tr(' silenciada até sair de "') + It.Status + '"', ttInfo);
     LoadItems;
   end
   else if AID = 'unmute' then
   begin
     Store.Unmute(It.AccountId, It.Key);
-    TUIToastManager.Show('Avisos de ' + It.Key + ' reativados', ttSuccess);
+    TUIToastManager.Show(Tr('Avisos de ') + It.Key + Tr(' reativados'), ttSuccess);
     LoadItems;
   end;
 end;
@@ -3584,7 +3840,7 @@ end;
 procedure TMainForm.CopyKey(const AItem: TItem);
 begin
   Clipboard.AsText := AItem.Key;
-  TUIToastManager.Show(AItem.Key + ' copiada', ttSuccess, 1500);
+  TUIToastManager.Show(AItem.Key + Tr(' copiada'), ttSuccess, 1500);
 end;
 
 procedure TMainForm.Unwatch(const AItem: TItem);
@@ -3592,7 +3848,7 @@ begin
   Store.RemoveManualKey(AItem.AccountId, AItem.Key);
   FUndoAccount := AItem.AccountId;
   FUndoKey := AItem.Key;
-  TUIToastManager.Show('Parei de acompanhar ' + AItem.Key, ttInfo, 6000, 'Desfazer', UndoUnwatch);
+  TUIToastManager.Show(Tr('Parei de acompanhar ') + AItem.Key, ttInfo, 6000, Tr('Desfazer'), UndoUnwatch);
   Poll(False);
 end;
 
@@ -3608,45 +3864,48 @@ end;
 { Descobre a conta pela forma da chave; se houver mais de uma do mesmo tipo,
   usa a conta do filtro. Confere a issue na API antes de salvar. }
 procedure TMainForm.WatchKey(const AText: string);
+const
+  FamilyNames: array[TKeyFamily] of string = ('', 'GitHub ou GitLab', 'Jira', 'Azure DevOps');
 var
   Key: string;
-  IsGitHub: Boolean;
+  Family: TKeyFamily;
   A, Target: TAccount;
   Count: Integer;
   Token: string;
 begin
-  Key := NormalizeManualKey(AText, IsGitHub);
+  Key := NormalizeManualKey(AText, Family);
   if Key = '' then
   begin
-    TUIToastManager.Show('Use PROJ-123 (Jira) ou dono/repo#12 (GitHub)', ttError, 5000);
+    TUIToastManager.Show(Tr('Use PROJ-123 (Jira), dono/repo#12 (GitHub, GitLab) ou Projeto#123 (Azure)'),
+      ttError, 6000);
     Exit;
   end;
   Count := 0;
   for A in FAccounts do
-    if (A.Kind = pkGitHub) = IsGitHub then
+    if KeyFamilies[A.Kind] = Family then
     begin
       Inc(Count);
       Target := A;
     end;
   if (Count > 1) and (FAccountFilter <> 0) and AccountById(FAccountFilter, A) and
-    ((A.Kind = pkGitHub) = IsGitHub) then
+    (KeyFamilies[A.Kind] = Family) then
   begin
     Target := A;
     Count := 1;
   end;
   if Count = 0 then
   begin
-    TUIToastManager.Show('Nenhuma conta ' + IfThen(IsGitHub, 'GitHub', 'Jira') + ' cadastrada', ttError, 5000);
+    TUIToastManager.Show(Tr('Nenhuma conta ') + Tr(FamilyNames[Family]) + Tr(' cadastrada'), ttError, 5000);
     Exit;
   end;
   if Count > 1 then
   begin
-    TUIToastManager.Show('Escolha a conta no seletor do topo', ttError, 5000);
+    TUIToastManager.Show(Tr('Escolha a conta no seletor do topo'), ttError, 5000);
     Exit;
   end;
 
   Token := LoadSecret(Target.SecretTarget);
-  TUIToastManager.Show('Conferindo ' + Key + '...', ttInfo, 2000);
+  TUIToastManager.Show(Tr('Conferindo ') + Key + '...', ttInfo, 2000);
   TTask.Run(
     procedure
     var
@@ -3666,11 +3925,11 @@ begin
           // no uses e acusa "no overloaded version of Queue". 1 = sucesso, 2 = erro.
           if Err <> '' then
           begin
-            TUIToastManager.Show(Key + ' não encontrada em ' + Target.Name + ' (' + Err + ')', TUIToastTone(2), 5000);
+            TUIToastManager.Show(Key + Tr(' não encontrada em ') + Target.Name + ' (' + Err + ')', TUIToastTone(2), 5000);
             Exit;
           end;
           Store.AddManualKey(Target.Id, Key);
-          TUIToastManager.Show('Acompanhando ' + Key + ': ' + Title, TUIToastTone(1));
+          TUIToastManager.Show(Tr('Acompanhando ') + Key + ': ' + Title, TUIToastTone(1));
           Poll(False);
         end);
     end);
@@ -3704,10 +3963,10 @@ begin
   FFooter := NewPanel(FContent, alBottom, 40);
   FFooter.Padding.SetBounds(Sp(UITheme.Tokens.Spacing.S4), 0, Sp(UITheme.Tokens.Spacing.S4), 0);
   Items := [
-    Sc('Ctrl+K', 'Buscar, comandos e acompanhar', procedure begin FPalette.Open; end),
-    Sc('F5', 'Atualizar', procedure begin Poll(True); end),
-    Sc('Ctrl+1-4', 'Abas', procedure begin ShowPage(TPage((Ord(FPage) + 1) mod (Ord(High(TPage)) + 1))); end),
-    Sc('Esc', 'Fechar', procedure begin FormKeyDownEsc; end)];
+    Sc(Tr('Ctrl+K'), Tr('Buscar, comandos e acompanhar'), procedure begin FPalette.Open; end),
+    Sc('F5', Tr('Atualizar'), procedure begin Poll(True); end),
+    Sc(Tr('Ctrl+1-4'), Tr('Abas'), procedure begin ShowPage(TPage((Ord(FPage) + 1) mod (Ord(High(TPage)) + 1))); end),
+    Sc(Tr('Esc'), Tr('Fechar'), procedure begin FormKeyDownEsc; end)];
   N := 0;
   for It in Items do
   begin
@@ -3736,7 +3995,7 @@ begin
   FHoursLabel := TUILabel.Create(Self);
   FHoursLabel.Variant := lvMuted;
   FHoursLabel.AutoSize := True;
-  FHoursLabel.Hint := 'Horas que você lançou no Jira (worklog)';
+  FHoursLabel.Hint := Tr('Horas que você lançou no Jira (worklog)');
   FHoursLabel.ShowHint := True;
   FHoursLabel.Align := alRight;
   FHoursLabel.Parent := FFooter;
@@ -3760,15 +4019,15 @@ var
   Secs: Integer;
   S: string;
 begin
-  S := Format('%d itens', [Length(FShown)]);
+  S := Format(Tr('%d itens'), [Length(FShown)]);
   if FPolling then
-    S := S + '  ·  atualizando...'
+    S := S + Tr('  ·  atualizando...')
   else
   begin
     if FLastPoll > 0 then
-      S := S + '  ·  atualizado ' + FormatDateTime('hh:nn', FLastPoll);
+      S := S + Tr('  ·  atualizado ') + FormatDateTime('hh:nn', FLastPoll);
     Secs := Max(0, SecondsBetween(FNextPoll, Now));
-    S := S + Format('  ·  próxima em %d:%.2d', [Secs div 60, Secs mod 60]);
+    S := S + Format(Tr('  ·  próxima em %d:%.2d'), [Secs div 60, Secs mod 60]);
   end;
   FNextRing.Hint := S;
   // Verde ok, pulsando enquanto busca, vermelho se alguma conta falhou.
@@ -3803,10 +4062,10 @@ begin
   FTabs.RemoveTab(2);
   FTabs.RemoveTab(1);
   FTabs.RemoveTab(0);
-  FTabs.AddTab(PageTitles[pgDashboard]);
-  FTabs.AddTab(PageTitles[pgIssues], FUnread);
-  FTabs.AddTab(PageTitles[pgAccounts], FAccountErrors.Count);
-  FTabs.AddTab(PageTitles[pgSettings]);
+  FTabs.AddTab(Tr(PageTitles[pgDashboard]));
+  FTabs.AddTab(Tr(PageTitles[pgIssues]), FUnread);
+  FTabs.AddTab(Tr(PageTitles[pgAccounts]), FAccountErrors.Count);
+  FTabs.AddTab(Tr(PageTitles[pgSettings]));
   FTabs.ActiveIndex := Keep;
   FTabs.OnChange := TabChange;
 end;
@@ -3820,22 +4079,22 @@ begin
   if Now < FNewsUntil then
   begin
     F := 'assistant-news.json';
-    Tip := 'Novidade nas issues!';
+    Tip := Tr('Novidade nas issues!');
   end
   else if FOverdue then
   begin
     F := 'assistant-idle-overdue.json';
-    Tip := 'Tem issue atrasada';
+    Tip := Tr('Tem issue atrasada');
   end
   else if FDueSoon then
   begin
     F := 'assistant-idle-duesoon.json';
-    Tip := 'Prazo chegando';
+    Tip := Tr('Prazo chegando');
   end
   else
   begin
     F := 'assistant-idle.json';
-    Tip := 'Como posso ajudar?';
+    Tip := Tr('Como posso ajudar?');
   end;
   if F = FMascotFile then
     Exit;
@@ -3907,24 +4166,24 @@ begin
           if Err <> '' then
           begin
             if AManual then
-              TUIToastManager.Show('Não deu para procurar: ' + Err, ttError, 6000);
+              TUIToastManager.Show(Tr('Não deu para procurar: ') + Err, ttError, 6000);
             Exit;
           end;
           if not Found then
           begin
             if AManual then
-              TUIToastManager.Show('Você já está na versão mais nova (' + AppVersion + ')', ttSuccess);
+              TUIToastManager.Show(Tr('Você já está na versão mais nova (') + AppVersion + ')', ttSuccess);
             Exit;
           end;
           FUpdate := Info;
-          FUpdateItem.Caption := 'Atualizar para ' + Info.Version;
+          FUpdateItem.Caption := Tr('Atualizar para ') + Info.Version;
           FUpdateItem.Visible := True;
-          FUpdateBtn.Caption := 'Atualizar para ' + Info.Version;
+          FUpdateBtn.Caption := Tr('Atualizar para ') + Info.Version;
           if (Store.GetSetting('update_mode') = 'auto') and not AManual and not Visible then
             StartUpdate(False)
           else
-            Notify('Vigia ' + Info.Version + ' disponível', 'Você está na ' + AppVersion +
-              '. Clique para atualizar; o Vigia fecha e volta sozinho.', '', stInfo, '*update');
+            Notify(Tr('Vigia ') + Info.Version + Tr(' disponível'), Tr('Você está na ') + AppVersion +
+              Tr('. Clique para atualizar; o Vigia fecha e volta sozinho.'), '', stInfo, '*update');
         end);
     end);
 end;
@@ -3938,13 +4197,13 @@ begin
     Exit;
   if not IsInstalledCopy then
   begin
-    TUIToastManager.Show('Esta cópia não foi instalada pelo instalador. Baixe a ' + FUpdate.Version +
-      ' na página de releases.', ttWarning, 6000);
+    TUIToastManager.Show(Tr('Esta cópia não foi instalada pelo instalador. Baixe a ') + FUpdate.Version +
+      Tr(' na página de releases.'), ttWarning, 6000);
     Exit;
   end;
   Info := FUpdate;
   FUpdateBusy := True;
-  TUIToastManager.Show('Baixando o Vigia ' + Info.Version + '...', ttInfo);
+  TUIToastManager.Show(Tr('Baixando o Vigia ') + Info.Version + '...', ttInfo);
   TTask.Run(
     procedure
     var
@@ -3962,7 +4221,7 @@ begin
           FUpdateBusy := False;
           if Err <> '' then
           begin
-            TUIToastManager.Show('Atualização falhou: ' + Err, ttError, 8000);
+            TUIToastManager.Show(Tr('Atualização falhou: ') + Err, ttError, 8000);
             Exit;
           end;
           try
@@ -3970,7 +4229,7 @@ begin
           except
             on E: Exception do
             begin
-              TUIToastManager.Show('Não abriu o instalador: ' + E.Message, ttError, 8000);
+              TUIToastManager.Show(Tr('Não abriu o instalador: ') + E.Message, ttError, 8000);
               Exit;
             end;
           end;
@@ -3987,10 +4246,10 @@ var
 begin
   D := TSaveDialog.Create(nil);
   try
-    D.Title := 'Exportar contas e configurações';
-    D.Filter := 'Backup do Vigia (*.json)|*.json';
+    D.Title := Tr('Exportar contas e configurações');
+    D.Filter := Tr('Backup do Vigia (*.json)|*.json');
     D.DefaultExt := 'json';
-    D.FileName := 'Vigia-backup-' + FormatDateTime('yyyy-mm-dd', Date) + '.json';
+    D.FileName := Tr('Vigia-backup-') + FormatDateTime('yyyy-mm-dd', Date) + '.json';
     D.Options := D.Options + [ofOverwritePrompt];
     if not D.Execute(Handle) then
       Exit;
@@ -3998,7 +4257,7 @@ begin
     for AK := Low(TAiProviderKind) to High(TAiProviderKind) do
       Targets := Targets + [AiSecretTarget(AK)];
     ExportBackup(Store, D.FileName, True, Targets);
-    TUIToastManager.Show('Backup salvo em ' + ExtractFileName(D.FileName), ttSuccess);
+    TUIToastManager.Show(Tr('Backup salvo em ') + ExtractFileName(D.FileName), ttSuccess);
   finally
     D.Free;
   end;
@@ -4011,19 +4270,19 @@ var
 begin
   D := TOpenDialog.Create(nil);
   try
-    D.Title := 'Importar contas e configurações';
-    D.Filter := 'Backup do Vigia (*.json)|*.json';
+    D.Title := Tr('Importar contas e configurações');
+    D.Filter := Tr('Backup do Vigia (*.json)|*.json');
     if not D.Execute(Handle) then
       Exit;
-    if not AskConfirm(Self, 'Importar backup', 'Conta com o mesmo nome e provedor é atualizada; ' +
-      'as outras entram. Tags, issues acompanhadas e preferências também.', 'Importar') then
+    if not AskConfirm(Self, Tr('Importar backup'), Tr('Conta com o mesmo nome e provedor é atualizada; ' +
+      'as outras entram. Tags, issues acompanhadas e preferências também.'), Tr('Importar')) then
       Exit;
     try
       R := ImportBackup(Store, D.FileName);
     except
       on E: Exception do
       begin
-        TUIToastManager.Show('Não importou: ' + E.Message, ttError, 8000);
+        TUIToastManager.Show(Tr('Não importou: ') + E.Message, ttError, 8000);
         Exit;
       end;
     end;
@@ -4032,11 +4291,96 @@ begin
     LoadAiSettings;
     FPollAll := True;
     Poll(False);
-    TUIToastManager.Show('Importado: ' + R.Summary + ' Tema e intervalos valem ao reabrir o Vigia.',
+    TUIToastManager.Show(Tr('Importado: ') + R.Summary + Tr(' Tema e intervalos valem ao reabrir o Vigia.'),
       ttSuccess, 10000);
   finally
     D.Free;
   end;
+end;
+
+procedure TMainForm.MiniMenuClick(Sender: TObject);
+begin
+  if (FMini <> nil) and FMini.Visible then
+  begin
+    FMini.Close;
+    Exit;
+  end;
+  if FMini = nil then
+  begin
+    FMini := TMiniForm.Create(Self);
+    FMini.OnOpen := NotifyOpenDetail;
+    FMini.OnClosed := MiniClosed;
+  end;
+  Store.SetSetting('mini_on', '1');
+  FMiniItem.Checked := True;
+  UpdateMini;
+  ShowWindow(FMini.Handle, SW_SHOWNOACTIVATE);
+  FMini.Visible := True;
+end;
+
+procedure TMainForm.MiniClosed(Sender: TObject);
+begin
+  Store.SetSetting('mini_on', '0');
+  FMiniItem.Checked := False;
+end;
+
+procedure TMainForm.UpdateMini;
+var
+  It: TItem;
+  NowItems: TItems;
+  Overdue, Mine: Integer;
+begin
+  if FMini = nil then
+    Exit;
+  NowItems := nil;
+  Overdue := 0;
+  Mine := 0;
+  for It in FAll do
+  begin
+    if NeedsActionNow(It) then
+      NowItems := NowItems + [It];
+    if IsOverdue(It) then
+      Inc(Overdue);
+    if isAssigned in It.Sources then
+      Inc(Mine);
+  end;
+  FMini.ShowData(NowItems, Overdue, Mine, Length(FAll));
+end;
+
+procedure TMainForm.NotifyMute(const AKey: string; AAccountId: Integer);
+begin
+  Store.Mute(AAccountId, AKey, Trunc(Now) + 1 + 8 / 24, '');
+  TUIToastManager.Show(AKey + Tr(' silenciada até amanhã às 8h'), ttInfo);
+  LoadItems;
+end;
+
+{ Resposta escrita no próprio aviso: comenta na issue sem abrir o Vigia. }
+procedure TMainForm.NotifyReply(const AKey: string; AAccountId: Integer; const AText: string);
+var
+  A: TAccount;
+begin
+  if not AccountById(AAccountId, A) then
+    Exit;
+  TTask.Run(
+    procedure
+    var
+      Err: string;
+    begin
+      try
+        PostComment(A, LoadSecret(A.SecretTarget), AKey, AText);
+      except
+        on E: Exception do
+          Err := E.Message;
+      end;
+      TThread.Queue(nil,
+        procedure
+        begin
+          if Err = '' then
+            Notify(Tr('Comentário enviado'), AKey + ': ' + AText, '', stSuccess)
+          else
+            Notify(Tr('Comentário não foi'), AKey + ': ' + Err, '', stError);
+        end);
+    end);
 end;
 
 procedure TMainForm.UpdateMenuClick(Sender: TObject);
@@ -4072,7 +4416,7 @@ begin
       for E in FPending do
         if not ContainsText(Keys, E.Key) then
           Keys := Keys + IfThen(Keys <> '', ', ') + E.Key;
-      Notify(Format('Vigia · %d avisos durante o silêncio', [Length(FPending)]), Keys, '', stPrimary,
+      Notify(Format(Tr('Vigia · %d avisos durante o silêncio'), [Length(FPending)]), Keys, '', stPrimary,
         '*dashboard');
     end;
     FPending := nil;
@@ -4105,21 +4449,21 @@ begin
     Comments := Store.CountEvents(ekComment, 24) + Store.CountEvents(ekMention, 24);
     if Store.GetSetting('ai_daily') = '1' then
     begin
-      AiAsk(BuildAiContext, 'Escreva o resumo de bom dia em até 4 frases curtas: o que vence, o que está ' +
-        'impedido, o que mudou desde ontem e por onde começar. Cite as chaves. Sem markdown.', True,
+      AiAsk(BuildAiContext, Tr('Escreva o resumo de bom dia em até 4 frases curtas: o que vence, o que está ' +
+        'impedido, o que mudou desde ontem e por onde começar. Cite as chaves. Sem markdown.'), True,
         procedure(AText: string)
         begin
-          Notify('Bom dia · resumo do Vigia', AText, '', stPrimary, '*dashboard');
+          Notify(Tr('Bom dia · resumo do Vigia'), AText, '', stPrimary, '*dashboard');
         end,
         procedure(AErr: string)
         begin
-          Notify('Bom dia · resumo do Vigia', Format('%d vencendo ou vencidas, %d chegando, %d impedidas. ' +
-            '(IA indisponível: %s)', [Red, Orange, Flagged, AErr]), '', stPrimary, '*dashboard');
+          Notify(Tr('Bom dia · resumo do Vigia'), Format(Tr('%d vencendo ou vencidas, %d chegando, %d impedidas. ' +
+            '(IA indisponível: %s)'), [Red, Orange, Flagged, AErr]), '', stPrimary, '*dashboard');
         end);
       Exit;
     end;
-    Notify('Bom dia · resumo do Vigia', Format('%d vencendo ou vencidas, %d chegando, %d impedidas, ' +
-      '%d comentário(s) nas últimas 24 h.', [Red, Orange, Flagged, Comments]), '', stPrimary, '*dashboard');
+    Notify(Tr('Bom dia · resumo do Vigia'), Format(Tr('%d vencendo ou vencidas, %d chegando, %d impedidas, ' +
+      '%d comentário(s) nas últimas 24 h.'), [Red, Orange, Flagged, Comments]), '', stPrimary, '*dashboard');
   end;
 end;
 
@@ -4280,7 +4624,7 @@ begin
   if Jobs = nil then
   begin
     if AManual then
-      TUIToastManager.Show('Nenhuma conta ligada', ttWarning);
+      TUIToastManager.Show(Tr('Nenhuma conta ligada'), ttWarning);
     LoadItems;
     // Nenhuma conta na vez: o relógio segue.
     FTimer.Enabled := False;
@@ -4295,7 +4639,7 @@ begin
   FTimer.Interval := PollIntervalMs;
   FTimer.Enabled := True;
   FNextPoll := Now + PollIntervalMs / MSecsPerDay;
-  FTray.Hint := 'Vigia · atualizando...';
+  FTray.Hint := Tr('Vigia · atualizando...');
   ApplyFilters;
   UpdateHeader;
 
@@ -4320,7 +4664,7 @@ begin
         end;
         // ponytail: soma só as contas Jira desta rodada; com várias contas Jira em
         // intervalos diferentes o total fica parcial até a próxima busca de todas.
-        if (Jobs[I].Account.Kind <> pkGitHub) and (Jobs[I].Error = '') then
+        if (Jobs[I].Account.Kind in JiraKinds) and (Jobs[I].Error = '') then
           try
             FetchWeekHours(Jobs[I].Account, LoadSecret(Jobs[I].Account.SecretTarget), T, W);
             HToday := HToday + T;
@@ -4352,7 +4696,7 @@ begin
           begin
             FHoursToday := HToday;
             FHoursWeek := HWeek;
-            FHoursLabel.Caption := Format('Lançado: %.1fh hoje · %.1fh na semana', [HToday, HWeek]);
+            FHoursLabel.Caption := Format(Tr('Lançado: %.1fh hoje · %.1fh na semana'), [HToday, HWeek]);
           end;
           // Chaves antes da busca: o que não estava aqui entra deslizando.
           Before := TDictionary<string, Boolean>.Create;
@@ -4376,8 +4720,8 @@ begin
               Store.SaveSnapshot(PR.Account.Id, Items);
               Store.AddEvents(Events);
               if Baseline then
-                Notify('Vigia · ' + PR.Account.Name,
-                  Format('Acompanhando %d itens. Aviso o que mudar daqui pra frente.', [Length(Items)]));
+                Notify(Tr('Vigia · ') + PR.Account.Name,
+                  Format(Tr('Acompanhando %d itens. Aviso o que mudar daqui pra frente.'), [Length(Items)]));
               All := All + FilterEvents(Events, PR.Account.Events);
             end;
 
@@ -4419,18 +4763,18 @@ begin
               for E in All do
                 if not ContainsText(Keys, E.Key) then
                   Keys := Keys + IfThen(Keys <> '', ', ') + E.Key;
-              Notify(Format('Vigia · %d novidades', [Length(All)]), Keys, '', stPrimary);
+              Notify(Format(Tr('Vigia · %d novidades'), [Length(All)]), Keys, '', stPrimary);
             end;
 
             // Janela aberta e ativa: o usuário já está vendo, não conta como não lido.
             if not (Visible and Application.Active) then
               Inc(FUnread, Length(All));
 
-            FAlert.Title := 'Falha na busca';
+            FAlert.Title := Tr('Falha na busca');
             FAlert.Message_ := Errors.Trim;
             FAlert.Visible := Errors <> '';
             if AManual and (All = nil) and (Errors = '') then
-              TUIToastManager.Show('Nada novo', ttInfo, 2000);
+              TUIToastManager.Show(Tr('Nada novo'), ttInfo, 2000);
 
             FLastPoll := Now;
           finally
@@ -4443,10 +4787,18 @@ begin
                 if not Before.ContainsKey(KeyOf(It)) then
                   FNewKeys.AddOrSetValue(KeyOf(It), True);
             Before.Free;
+            if (Store.GetSetting('ai_triage') = '1') and (FNewKeys.Count > 0) then
+            begin
+              Items := nil;
+              for It in FAll do
+                if FNewKeys.ContainsKey(KeyOf(It)) then
+                  Items := Items + [It];
+              TriageItems(Items, False);
+            end;
             FlashChanges(Changed);
             UpdateBadges;
-            FTray.Hint := Format('Vigia · %d itens · %s%s', [Length(FAll),
-              FormatDateTime('hh:nn', FLastPoll), IfThen(Errors <> '', ' · com erro', '')]);
+            FTray.Hint := Format(Tr('Vigia · %d itens · %s%s'), [Length(FAll),
+              FormatDateTime('hh:nn', FLastPoll), IfThen(Errors <> '', Tr(' · com erro'), '')]);
           end;
         end);
     end);

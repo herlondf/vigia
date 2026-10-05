@@ -3,7 +3,11 @@ unit Vigia.Model;
 interface
 
 type
-  TProviderKind = (pkGitHub, pkJiraServer, pkJiraCloud);
+  TProviderKind = (pkGitHub, pkJiraServer, pkJiraCloud, pkGitLab, pkAzure);
+
+  { Formato da chave de acompanhamento manual: 'dono/repo#12' (GitHub, GitLab),
+    'PROJ-123' (Jira), 'Projeto#123' (Azure DevOps). }
+  TKeyFamily = (kfNone, kfRepo, kfJira, kfAzure);
 
   TEventKind = (ekAssigned, ekComment, ekMention, ekStatus, ekDueSoon,
     ekOverdue, ekReviewRequested, ekFlagged, ekPrApproved, ekChangesRequested, ekCiFailed);
@@ -143,16 +147,16 @@ type
 
 const
   ProviderNames: array[TProviderKind] of string = (
-    'GitHub', 'Jira Server/DC', 'Jira Cloud');
+    'GitHub', 'Jira Server/DC', 'Jira Cloud', 'GitLab', 'Azure DevOps');
 
   DefaultBaseUrls: array[TProviderKind] of string = (
     'https://api.github.com', 'https://',
-    'https://<empresa>.atlassian.net');
+    'https://<empresa>.atlassian.net', 'https://gitlab.com', 'https://dev.azure.com/<organização>');
 
   // Curto, para caber ao lado do nome da conta no seletor.
-  ShortProviderNames: array[TProviderKind] of string = ('GitHub', 'Jira', 'Jira Cloud');
+  ShortProviderNames: array[TProviderKind] of string = ('GitHub', 'Jira', 'Jira Cloud', 'GitLab', 'Azure');
   // Única fonte da versão: o instalador e a release leem daqui.
-  AppVersion = '0.22.0';
+  AppVersion = '0.23.0';
   // Segunda instância pede para a primeira mostrar a janela.
   ShowMessageName = 'Vigia.Show';
 
@@ -163,8 +167,17 @@ const
 
   AllEvents = [Low(TEventKind)..High(TEventKind)];
 
+  // Issues e PRs/MRs de repositório (avisos por notificação, chave dono/repo#12).
+  RepoKinds = [pkGitHub, pkGitLab];
+  JiraKinds = [pkJiraServer, pkJiraCloud];
+  // Registram horas na issue.
+  WorklogKinds = [pkJiraServer, pkJiraCloud, pkGitLab];
+  KeyFamilies: array[TProviderKind] of TKeyFamily = (kfRepo, kfJira, kfJira, kfRepo, kfAzure);
+
 function NewAccount(AKind: TProviderKind): TAccount;
 function ItemTagKey(AAccountId: Integer; const AKey: string): string;
+{ Nome da preferência onde fica a sugestão de triagem da IA para a issue. }
+function TriageSettingName(AAccountId: Integer; const AKey: string): string;
 { Filtro de repositórios/projetos da conta. GitHub 'dono/repo#12' casa com
   'dono/repo' ou 'dono'; Jira 'PROJ-12' casa com 'PROJ'. Incluir vazio = tudo. }
 function ItemAllowed(const AAccount: TAccount; const AKey: string): Boolean;
@@ -179,6 +192,11 @@ uses
 function TAccount.SecretTarget: string;
 begin
   Result := 'Vigia:' + IntToStr(Id);
+end;
+
+function TriageSettingName(AAccountId: Integer; const AKey: string): string;
+begin
+  Result := 'triage:' + ItemTagKey(AAccountId, AKey);
 end;
 
 function ItemTagKey(AAccountId: Integer; const AKey: string): string;
@@ -197,9 +215,13 @@ begin
 end;
 
 function RepoOf(const AKey: string): string;
+var
+  P: Integer;
 begin
-  if AKey.Contains('#') then
-    Result := AKey.Substring(0, AKey.IndexOf('#'))
+  // GitLab: MR é 'grupo/projeto!5'.
+  P := AKey.IndexOfAny(['#', '!']);
+  if P > 0 then
+    Result := AKey.Substring(0, P)
   else
     Result := '';
 end;
@@ -208,10 +230,14 @@ function ItemAllowed(const AAccount: TAccount; const AKey: string): Boolean;
 var
   Repo, Owner: string;
 begin
-  if AKey.Contains('#') then
+  if RepoOf(AKey) <> '' then
   begin
-    Repo := AKey.Substring(0, AKey.IndexOf('#'));
-    Owner := Repo.Substring(0, Repo.IndexOf('/'));
+    Repo := RepoOf(AKey);
+    // Azure 'Projeto#12' não tem dono: o projeto vale pelos dois.
+    if Repo.Contains('/') then
+      Owner := Repo.Substring(0, Repo.IndexOf('/'))
+    else
+      Owner := Repo;
   end
   else
   begin
@@ -260,7 +286,7 @@ begin
   Result.DueDays := 2;
   Result.WarnDays := 5;
   Result.CriticalDays := 2;
-  Result.MyPrs := AKind = pkGitHub;
+  Result.MyPrs := AKind in RepoKinds;
   Result.OwnRepos := AKind = pkGitHub;
 end;
 

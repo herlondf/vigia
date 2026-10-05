@@ -6,6 +6,8 @@
     Precisa do RAD Studio 12 (Studio 22.0), da ComponentesUI e do Inno Setup 6.
     A ComponentesUI vem de -CuiRoot, da variável VIGIA_CUI ou de ..\Delphi\ComponentesUI.
     Saída: dist\Vigia-Setup-<versão>.exe
+    Assinatura (opcional): VIGIA_SIGN_THUMBPRINT (certificado no repositório do
+    usuário) ou VIGIA_SIGN_PFX + VIGIA_SIGN_PASSWORD. Sem nenhum, segue sem assinar.
 .EXAMPLE
     pwsh ci/build-release.ps1
 #>
@@ -57,6 +59,26 @@ if (-not $SkipTests) {
     if (($out | Select-Object -Last 1) -notmatch 'TUDO OK') { throw 'self-check falhou' }
 }
 
+# Assinatura de código: Windows SDK signtool, SHA-256 com carimbo de tempo.
+function Sign($file) {
+    if (-not ($env:VIGIA_SIGN_THUMBPRINT -or $env:VIGIA_SIGN_PFX)) { return }
+    $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+        Where-Object FullName -like '*\x64\*' | Sort-Object FullName | Select-Object -Last 1 -ExpandProperty FullName
+    if (-not $signtool) { throw 'signtool.exe não encontrado (instale o Windows SDK)' }
+    $signArgs = @('sign', '/fd', 'SHA256', '/tr', 'http://timestamp.digicert.com', '/td', 'SHA256')
+    if ($env:VIGIA_SIGN_THUMBPRINT) { $signArgs += @('/sha1', $env:VIGIA_SIGN_THUMBPRINT) }
+    else { $signArgs += @('/f', $env:VIGIA_SIGN_PFX, '/p', $env:VIGIA_SIGN_PASSWORD) }
+    & $signtool @signArgs $file | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "assinatura falhou: $file" }
+    Write-Host "    assinado: $(Split-Path $file -Leaf)"
+}
+if ($env:VIGIA_SIGN_THUMBPRINT -or $env:VIGIA_SIGN_PFX) {
+    Step 'assinatura'
+    Sign (Join-Path $root 'bin\Win32\Release\Vigia.exe')
+} else {
+    Write-Host '    sem certificado (VIGIA_SIGN_THUMBPRINT/VIGIA_SIGN_PFX): instalador sai sem assinatura' -ForegroundColor DarkYellow
+}
+
 # Inno Setup: instalado por usuário (winget --scope user) ou no PATH.
 $iscc = @(
     (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'),
@@ -73,6 +95,7 @@ if ($LASTEXITCODE -ne 0) { throw "ISCC saiu com $LASTEXITCODE" }
 
 $setup = Join-Path $dist "Vigia-Setup-$version.exe"
 if (-not (Test-Path $setup)) { throw "instalador não gerado: $setup" }
+Sign $setup
 Step ("pronto: {0} ({1:N1} MB)" -f $setup, ((Get-Item $setup).Length / 1MB))
 
 if ($env:GITHUB_OUTPUT) {

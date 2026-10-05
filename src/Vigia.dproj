@@ -76,6 +76,9 @@
     <DCCReference Include="Vigia.UI.Tags.pas"/>
     <DCCReference Include="Vigia.Update.pas"/>
     <DCCReference Include="Vigia.Backup.pas"/>
+    <DCCReference Include="Vigia.UI.Mini.pas"/>
+    <DCCReference Include="Vigia.I18n.pas"/>
+    <DCCReference Include="Vigia.I18n.En.pas"/>
     <BuildConfiguration Include="Base">
       <Key>Base</Key>
     </BuildConfiguration>

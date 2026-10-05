@@ -19,6 +19,7 @@ function FilterEvents(const AEvents: TEvents; AWanted: TEventKinds): TEvents;
 implementation
 
 uses
+  Vigia.I18n,
   System.SysUtils,
   System.StrUtils,
   System.DateUtils;
@@ -45,7 +46,7 @@ begin
   E.AccountId := AItem.AccountId;
   E.Key := AItem.Key;
   E.Url := AItem.Url;
-  E.Title := Format('%s · %s · %s', [AAccount.Name, AItem.Key, EventNames[AKind]]);
+  E.Title := Format('%s · %s · %s', [AAccount.Name, AItem.Key, Tr(EventNames[AKind])]);
   E.Body := ABody;
   AEvents := AEvents + [E];
 end;
@@ -81,13 +82,13 @@ begin
       if (DaysLeft < 0) and (ANew[I].DueAlert < 2) then
       begin
         Add(Result, ekOverdue, ANew[I], AAccount,
-          Format('%s: venceu há %d dia(s)', [Clip(ANew[I].Title), -DaysLeft]));
+          Format(Tr('%s: venceu há %d dia(s)'), [Clip(ANew[I].Title), -DaysLeft]));
         ANew[I].DueAlert := 2;
       end
       else if (DaysLeft >= 0) and (DaysLeft <= AAccount.DueDays) and (ANew[I].DueAlert < 1) then
       begin
-        Add(Result, ekDueSoon, ANew[I], AAccount, Format('%s: vence %s', [Clip(ANew[I].Title),
-          IfThen(DaysLeft = 0, 'hoje', Format('em %d dia(s)', [DaysLeft]))]));
+        Add(Result, ekDueSoon, ANew[I], AAccount, Format(Tr('%s: vence %s'), [Clip(ANew[I].Title),
+          IfThen(DaysLeft = 0, 'hoje', Format(Tr('em %d dia(s)'), [DaysLeft]))]));
         ANew[I].DueAlert := 1;
       end;
     end;
@@ -117,7 +118,7 @@ begin
     end;
     if MatchText(ANew[I].CiState, ['FAILURE', 'ERROR']) and
       not MatchText(Old.CiState, ['FAILURE', 'ERROR']) then
-      Add(Result, ekCiFailed, ANew[I], AAccount, Clip(ANew[I].Title) + IfThen(ANew[I].CiDetail <> '', sLineBreak + 'Job: ' + ANew[I].CiDetail, ''));
+      Add(Result, ekCiFailed, ANew[I], AAccount, Clip(ANew[I].Title) + IfThen(ANew[I].CiDetail <> '', sLineBreak + Tr('Job: ') + ANew[I].CiDetail, ''));
 
     // Snapshot sem StatusCategory é do banco antigo, que não guardava a flag:
     // não dá para saber se ela é nova.
@@ -129,8 +130,8 @@ begin
         Format('%s → %s · %s', [Old.Status, ANew[I].Status, Clip(ANew[I].Title, 100)]));
 
     NewComment := ANew[I].CommentCount > Old.CommentCount;
-    if AAccount.Kind = pkGitHub then
-      // Notification nunca nasce de ação minha; nova reason não lida = outra pessoa mexeu.
+    if AAccount.Kind in RepoKinds then
+      // Notification (to-do no GitLab) nunca nasce de ação minha; nova reason não lida = outra pessoa mexeu.
       ByOther := (ANew[I].UnreadReason <> '') and (ANew[I].UnreadReason <> Old.UnreadReason)
     else
       ByOther := (ANew[I].LastCommentBy <> '') and not SameText(ANew[I].LastCommentBy, AMe.Id);
@@ -140,13 +141,13 @@ begin
       if ANew[I].MentionsMe then
         Add(Result, ekMention, ANew[I], AAccount, Clip(ANew[I].LastCommentBy + ': ' +
           IfThen(ANew[I].LastCommentText <> '', ANew[I].LastCommentText, ANew[I].Title)))
-      else if AAccount.Kind = pkGitHub then
+      else if AAccount.Kind in RepoKinds then
         Add(Result, ekComment, ANew[I], AAccount, Clip(ANew[I].Title))
       else
         Add(Result, ekComment, ANew[I], AAccount,
           Clip(ANew[I].LastCommentBy + ': ' + ANew[I].LastCommentText));
     end
-    else if (AAccount.Kind = pkGitHub) and (ANew[I].UnreadReason = 'mention') and
+    else if (AAccount.Kind in RepoKinds) and (ANew[I].UnreadReason = 'mention') and
       (Old.UnreadReason <> 'mention') then
       // Menção na descrição, sem comentário novo.
       Add(Result, ekMention, ANew[I], AAccount, Clip(ANew[I].Title));

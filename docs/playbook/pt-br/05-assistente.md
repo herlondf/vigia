@@ -51,6 +51,7 @@ No painel da issue, o ícone de brilho resume os comentários. Ele também escre
 | Alerta de risco | Uma vez por dia, até 3 issues com chance de atrasar ou travar |
 | Rascunho de horas no fim do dia | Às 17:30 em dia útil, sugere lançamentos que faltam. Peça "lance o rascunho de horas" para o assistente lançar |
 | Causa da falha do CI | Quando um PR seu fica vermelho, lê o log do job e explica |
+| Triagem de issues novas | Sugere uma das suas tags e a prioridade para até 3 issues novas por busca. A sugestão aparece no painel ("IA sugere"); **Ações › Aplicar sugestão da IA** marca a tag e, no Jira, muda a prioridade (com confirmação). **Ações › Triar com IA** pede na hora |
 
 ## Controle de gasto
 

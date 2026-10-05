@@ -122,6 +122,9 @@ begin
   // Anthropic: a chave antiga (antes dos provedores) continua valendo.
   if (Result.Kind = apAnthropic) and (Result.ApiKey = '') then
     Result.ApiKey := LoadSecret('Vigia:anthropic');
+  // Mesma reserva do chat: chave na variável de ambiente.
+  if (Result.Kind = apAnthropic) and (Result.ApiKey = '') then
+    Result.ApiKey := GetEnvironmentVariable('ANTHROPIC_API_KEY');
 end;
 
 function TrimSlash(const S: string): string;

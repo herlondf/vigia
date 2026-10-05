@@ -21,7 +21,10 @@ uses
   Vigia.AI in 'Vigia.AI.pas',
   Vigia.UI.Tags in 'Vigia.UI.Tags.pas',
   Vigia.Update in 'Vigia.Update.pas',
-  Vigia.Backup in 'Vigia.Backup.pas';
+  Vigia.Backup in 'Vigia.Backup.pas',
+  Vigia.UI.Mini in 'Vigia.UI.Mini.pas',
+  Vigia.I18n in 'Vigia.I18n.pas',
+  Vigia.I18n.En in 'Vigia.I18n.En.pas';
 
 var
   Mutex: THandle;

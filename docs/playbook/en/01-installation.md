@@ -25,6 +25,14 @@ A desktop shortcut is optional, in a checkbox of the installer.
 
 **Configurações › Geral › Iniciar com o Windows** (Settings › General › Start with Windows), or right-click the tray icon. It applies to your user only.
 
+## Language
+
+**Configurações › Geral › Idioma** (Settings › General › Language): Portuguese, English or automatic (follows Windows). Applies when Vigia is reopened.
+
+## Global shortcut
+
+**Win+Alt+V** opens Vigia from any program; press it again to hide. Turn it on or off in **Settings › General › Global shortcut**.
+
 ## Update
 
 Vigia checks for a new version once a day. When it finds one, it tells you: click the alert, or **Atualizar para x.y.z** (Update to x.y.z) in the tray menu. It downloads, verifies the file, installs and reopens. Accounts, tags and tokens are kept.

@@ -14,6 +14,7 @@
   <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows" alt="Windows 10 e 11">
   <img src="https://img.shields.io/badge/Delphi-VCL%20%2B%20Skia-E62431" alt="Delphi VCL + Skia">
   <img src="https://img.shields.io/badge/instala%C3%A7%C3%A3o-sem%20admin-22c55e" alt="Instalação sem admin">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/licen%C3%A7a-MIT-blue" alt="Licença MIT"></a>
 </p>
 
 <p align="center">
@@ -24,10 +25,12 @@
 
 ## Por que usar
 
-- **Um lugar só.** GitHub, Jira Server/DC e Jira Cloud, quantas contas você quiser.
+- **Um lugar só.** GitHub, GitLab, Jira Server/DC, Jira Cloud e Azure DevOps, quantas contas você quiser.
 - **Aviso que importa.** Associação, comentário, menção, status, prazo, review, PR aprovado, CI vermelho. Você escolhe por conta.
 - **Age dali mesmo.** Comentar, registrar horas, mudar status, atribuir, marcar impedimento. Sempre com confirmação.
 - **Assistente com IA.** Pergunte "o que vence esta semana?" ou peça "lance 2h na PROJ-1".
+- **No seu ritmo.** Filtro "Agora", janela mini sempre por cima, Win+Alt+V e resposta direto no aviso.
+- **Português ou inglês.** A interface segue o Windows, ou você escolhe.
 - **Sempre atual.** Avisa quando sai versão nova e se atualiza com um clique.
 - **Seguro.** Tokens ficam no Credential Manager do Windows. Nada vai para arquivo ou banco.
 

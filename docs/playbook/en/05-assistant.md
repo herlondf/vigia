@@ -51,6 +51,7 @@ In the issue panel, the sparkle icon summarizes the comments. It also writes a d
 | Alerta de risco (Risk alert) | Once a day, up to 3 issues likely to slip or get stuck |
 | Rascunho de horas no fim do dia (End-of-day worklog draft) | At 5:30 pm on weekdays, suggests missing work logs. Ask the assistant "log the worklog draft" to log them |
 | Causa da falha do CI (CI failure cause) | When one of your PRs turns red, reads the job log and explains |
+| Triagem de issues novas (New issue triage) | Suggests one of your tags and a priority for up to 3 new issues per poll. The suggestion shows in the panel ("AI suggests"); **Actions › Apply AI suggestion** sets the tag and, on Jira, changes the priority (with confirmation). **Actions › Triage with AI** asks right away |
 
 ## Spending control
 

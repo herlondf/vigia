@@ -19,6 +19,8 @@ O Vigia busca a cada 5 minutos (ajustável) e compara com a busca anterior. Avis
 - Na **primeira busca** de uma conta aparece só "Acompanhando N itens". Os avisos começam depois.
 - Muitos avisos de uma vez viram um só, com a lista das chaves.
 - **Ver no Vigia** no aviso abre a issue.
+- **Responder** abre uma caixa no próprio aviso: escreva e aperte Enter para comentar sem abrir o Vigia.
+- **Silenciar** para os avisos da issue até amanhã às 8h.
 
 ## Estilo do aviso
 

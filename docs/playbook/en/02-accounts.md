@@ -56,6 +56,31 @@ Create it in Jira: **profile picture › Profile › Personal Access Tokens › 
 
 Create the API token at [id.atlassian.com › Security › API tokens](https://id.atlassian.com/manage-profile/security/api-tokens).
 
+## GitLab
+
+| Field | Value |
+|---|---|
+| URL base | `https://gitlab.com` (or your company's GitLab address) |
+| Token de acesso | Personal access token with the `api` scope (`read_api` to only read) |
+
+Create it in **GitLab › Preferences › Access tokens**. Vigia fetches issues assigned to you, MRs where your review was requested, your MRs (with pipeline) and to-dos (mentions). Keys are `group/project#12` for issues and `group/project!5` for MRs.
+
+- **Busca extra** (Extra search): issues API parameters, e.g. `labels=bug&milestone=Sprint 5`.
+- The due date comes from the issue or milestone due date.
+
+## Azure DevOps
+
+| Field | Value |
+|---|---|
+| URL base | `https://dev.azure.com/<organization>` |
+| Token de acesso | PAT with **Work Items (Read & write)** |
+
+Create it in **User settings › Personal access tokens**. Vigia fetches work items assigned to you, the ones you follow and recent mentions. Keys are `Project#123`.
+
+- **Busca extra** (Extra search): a WIQL fragment, e.g. `[System.AreaPath] UNDER 'App\Payments'`.
+- **Due date field**: reference name (e.g. `Custom.Due`); empty uses Due Date or Target Date.
+- The `Blocked` tag shows as flagged.
+
 ## Jira options (Server and Cloud)
 
 - **Busca extra** (Extra search): JQL, e.g. `project = ABC AND labels = urgent`.

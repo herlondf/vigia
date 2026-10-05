@@ -24,6 +24,7 @@ function AskChoice(AOwner: TComponent; const ATitle, AMessage, ALabel: string;
 implementation
 
 uses
+  Vigia.I18n,
   System.SysUtils,
   System.StrUtils,
   System.Threading,
@@ -97,7 +98,7 @@ begin
   FAccount := AAccount;
   FItem := AItem;
   FToken := LoadSecret(AAccount.SecretTarget);
-  Caption := 'Mudar status: ' + AItem.Key;
+  Caption := Tr('Mudar status: ') + AItem.Key;
   ClientWidth := ScaleValue(420);
   ClientHeight := ScaleValue(250);
   Position := poOwnerFormCenter;
@@ -114,7 +115,7 @@ begin
   Foot.Align := alBottom;
   Foot.Parent := Self;
   FApply := TUIButton.Create(Self);
-  FApply.Caption := 'Aplicar';
+  FApply.Caption := Tr('Aplicar');
   FApply.AutoWidth := True;
   FApply.Default := True;
   FApply.Enabled := False;
@@ -122,7 +123,7 @@ begin
   FApply.Align := alRight;
   FApply.Parent := Foot;
   Btn := TUIButton.Create(Self);
-  Btn.Caption := 'Cancelar';
+  Btn.Caption := Tr('Cancelar');
   Btn.Variant := bvOutline;
   Btn.AutoWidth := True;
   Btn.Cancel := True;
@@ -144,7 +145,7 @@ begin
   Lbl.Align := alTop;
 
   Lbl := TUILabel.Create(Self);
-  Lbl.Caption := 'Status atual: ' + AItem.Status;
+  Lbl.Caption := Tr('Status atual: ') + AItem.Status;
   Lbl.Variant := lvMuted;
   Lbl.AutoSize := False;
   Lbl.Height := 20;
@@ -155,8 +156,8 @@ begin
   Lbl.Align := alTop;
 
   FSelect := TUISelect.Create(Self);
-  FSelect.Caption := 'Mover para';
-  FSelect.Placeholder := 'Carregando transições...';
+  FSelect.Caption := Tr('Mover para');
+  FSelect.Placeholder := Tr('Carregando transições...');
   FSelect.OnChange := SelectChange;
   FSelect.AlignWithMargins := True;
   FSelect.Margins.SetBounds(CPad, 12, CPad, 0);
@@ -230,7 +231,7 @@ begin
           FTransitions := List;
           if Err <> '' then
           begin
-            FAlert.Title := 'Não carregou as transições';
+            FAlert.Title := Tr('Não carregou as transições');
             FAlert.Message_ := Err;
             FAlert.Visible := True;
             Exit;
@@ -240,9 +241,9 @@ begin
               FSelect.Items.Add(T.ToStatus)
             else
               FSelect.Items.Add(T.ToStatus + '  (' + T.Name + ')');
-          FSelect.Placeholder := 'Escolha o novo status';
+          FSelect.Placeholder := Tr('Escolha o novo status');
           if List = nil then
-            FSelect.Placeholder := 'Nenhuma transição disponível';
+            FSelect.Placeholder := Tr('Nenhuma transição disponível');
           FSelect.ItemsLoaded;
           FApply.Enabled := List <> nil;
         end);
@@ -271,7 +272,7 @@ begin
     begin
       Sel := TUISelect.Create(Self);
       Sel.Caption := F.Name + ' *';
-      Sel.Placeholder := 'Escolha';
+      Sel.Placeholder := Tr('Escolha');
       for V in F.Allowed do
         Sel.Items.Add(V);
       Sel.ItemsLoaded;
@@ -308,7 +309,7 @@ begin
   if (FSelect.ItemIndex < 0) or (FSelect.ItemIndex > High(FTransitions)) then
   begin
     FAlert.Tone := atWarning;
-    FAlert.Title := 'Escolha o novo status';
+    FAlert.Title := Tr('Escolha o novo status');
     FAlert.Message_ := '';
     FAlert.Visible := True;
     Exit;
@@ -332,7 +333,7 @@ begin
     if V = '' then
     begin
       FAlert.Tone := atWarning;
-      FAlert.Title := 'Preencha os campos obrigatórios';
+      FAlert.Title := Tr('Preencha os campos obrigatórios');
       FAlert.Message_ := '';
       FAlert.Visible := True;
       Exit;
@@ -363,7 +364,7 @@ begin
           else
           begin
             FAlert.Tone := atError;
-            FAlert.Title := 'O servidor recusou';
+            FAlert.Title := Tr('O servidor recusou');
             FAlert.Message_ := Err;
             FAlert.Visible := True;
           end;
@@ -418,7 +419,7 @@ begin
     begin
       try
         FetchWeekHours(A, LoadSecret(A.SecretTarget), Today, Week);
-        Txt := Format('Você já lançou %.1fh hoje e %.1fh nesta semana', [Today, Week]);
+        Txt := Format(Tr('Você já lançou %.1fh hoje e %.1fh nesta semana'), [Today, Week]);
       except
         on E: Exception do
           Txt := '';
@@ -459,7 +460,7 @@ begin
   Started := FDay.Value + EncodeTime(FStart.Hour, FStart.Minute, 0, 0);
   if Hours <= 0 then
   begin
-    FAlert.Title := 'Informe as horas';
+    FAlert.Title := Tr('Informe as horas');
     FAlert.Message_ := '';
     FAlert.Visible := True;
     Exit;
@@ -484,12 +485,12 @@ begin
           FSave.Loading := False;
           if Err = '' then
           begin
-            TUIToastManager.Show(Format('%.1fh registradas em %s', [Hours, Key]), ttSuccess);
+            TUIToastManager.Show(Format(Tr('%.1fh registradas em %s'), [Hours, Key]), ttSuccess);
             ModalResult := mrOk;
           end
           else
           begin
-            FAlert.Title := 'O Jira recusou';
+            FAlert.Title := Tr('O servidor recusou');
             FAlert.Message_ := Err;
             FAlert.Visible := True;
           end;
@@ -530,7 +531,7 @@ begin
   try
     F.FAccount := AAccount;
     F.FItem := AItem;
-    F.Caption := 'Registrar tempo';
+    F.Caption := Tr('Registrar tempo');
     F.ClientWidth := F.ScaleValue(460);
     F.ClientHeight := F.ScaleValue(432);
     F.Position := poOwnerFormCenter;
@@ -550,7 +551,7 @@ begin
     Line.Top := 100000;
     Line.Align := alBottom;
     F.FSave := TUIButton.Create(F);
-    F.FSave.Caption := 'Registrar';
+    F.FSave.Caption := Tr('Registrar');
     F.FSave.Width := F.ScaleValue(120);
     F.FSave.Default := True;
     F.FSave.OnClick := F.SaveClick;
@@ -558,7 +559,7 @@ begin
     F.FSave.Left := 2000;
     F.FSave.Align := alRight;
     Btn := TUIButton.Create(F);
-    Btn.Caption := 'Cancelar';
+    Btn.Caption := Tr('Cancelar');
     Btn.Variant := bvGhost;
     Btn.Width := F.ScaleValue(100);
     Btn.OnClick := F.CancelClick;
@@ -585,7 +586,7 @@ begin
     Lbl.Height := F.ScaleValue(42);
     Stack(Lbl, 2);
     F.FWeek := TUILabel.Create(F);
-    F.FWeek.Caption := 'Somando suas horas da semana...';
+    F.FWeek.Caption := Tr('Somando suas horas da semana...');
     F.FWeek.Variant := lvMuted;
     F.FWeek.AutoSize := False;
     F.FWeek.Height := F.ScaleValue(18);
@@ -614,7 +615,7 @@ begin
     Row := NewRow(66);
     Stack(Row, 12);
     F.FHours := TUINumberInput.Create(F);
-    F.FHours.LabelText := 'Horas';
+    F.FHours.LabelText := Tr('Horas');
     F.FHours.Min := 0;
     F.FHours.Max := 24;
     F.FHours.Step := 0.5;
@@ -625,7 +626,7 @@ begin
     F.FHours.Left := 1000;
     F.FHours.Align := alLeft;
     F.FDay := TUIDatePicker.Create(F);
-    F.FDay.LabelText := 'Dia';
+    F.FDay.LabelText := Tr('Dia');
     F.FDay.Value := Date;
     F.FDay.AlignWithMargins := True;
     F.FDay.Margins.SetBounds(10, 0, 0, 0);
@@ -633,7 +634,7 @@ begin
     F.FDay.Left := 2000;
     F.FDay.Align := alClient;
     F.FStart := TUITimePicker.Create(F);
-    F.FStart.LabelText := 'Início';
+    F.FStart.LabelText := Tr('Início');
     F.FStart.Hour := 9;
     F.FStart.Minute := 0;
     F.FStart.Width := F.ScaleValue(118);
@@ -644,7 +645,7 @@ begin
     F.FStart.Align := alRight;
 
     F.FNote := TUITextArea.Create(F);
-    F.FNote.LabelText := 'O que foi feito (opcional)';
+    F.FNote.LabelText := Tr('O que foi feito (opcional)');
     F.FNote.Rows := 4;
     Stack(F.FNote, 14);
 
@@ -729,7 +730,7 @@ begin
     Ok.Left := 2000;
     Ok.Align := alRight;
     Btn := TUIButton.Create(F);
-    Btn.Caption := 'Cancelar';
+    Btn.Caption := Tr('Cancelar');
     Btn.Variant := bvGhost;
     Btn.AutoWidth := True;
     Btn.Cancel := True;
@@ -810,7 +811,7 @@ var
   I: Integer;
 begin
   I := -1;
-  Result := Ask(AOwner, 1, ATitle, AMessage, ALabel, 'Confirmar', nil, AValue, I);
+  Result := Ask(AOwner, 1, ATitle, AMessage, ALabel, Tr('Confirmar'), nil, AValue, I);
 end;
 
 function AskChoice(AOwner: TComponent; const ATitle, AMessage, ALabel: string;
@@ -818,7 +819,7 @@ function AskChoice(AOwner: TComponent; const ATitle, AMessage, ALabel: string;
 var
   T: string;
 begin
-  Result := Ask(AOwner, 2, ATitle, AMessage, ALabel, 'Confirmar', AChoices, T, AIndex);
+  Result := Ask(AOwner, 2, ATitle, AMessage, ALabel, Tr('Confirmar'), AChoices, T, AIndex);
 end;
 
 end.

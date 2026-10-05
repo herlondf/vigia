@@ -73,6 +73,7 @@ function EditAccount(AOwner: TComponent; const AAccount: TAccount): Boolean;
 implementation
 
 uses
+  Vigia.I18n,
   System.SysUtils,
   System.StrUtils,
   System.Math,
@@ -90,11 +91,15 @@ const
   UrlHints: array[TProviderKind] of string = (
     'https://api.github.com, ou a URL da API do GitHub Enterprise',
     'Endereço do Jira, ex.: https://jira.empresa.com.br',
-    'https://<empresa>.atlassian.net');
+    'https://<empresa>.atlassian.net',
+    'https://gitlab.com, ou o endereço do GitLab da empresa',
+    'https://dev.azure.com/<organização>');
   TokenHints: array[TProviderKind] of string = (
     'PAT classic com os escopos repo e notifications',
     'Personal Access Token (Perfil > Tokens de acesso pessoal)',
-    'API token de id.atlassian.com/manage-profile/security');
+    'API token de id.atlassian.com/manage-profile/security',
+    'Personal access token com o escopo api (ou read_api só para ler)',
+    'PAT do Azure DevOps com Work Items (leitura e escrita)');
 
 function EditAccount(AOwner: TComponent; const AAccount: TAccount): Boolean;
 var
@@ -112,7 +117,7 @@ constructor TAccountForm.CreateFor(AOwner: TComponent; const AAccount: TAccount)
 begin
   inherited CreateNew(AOwner);
   FAccount := AAccount;
-  Caption := IfThen(FAccount.Id = 0, 'Nova conta', 'Conta: ' + FAccount.Name);
+  Caption := IfThen(FAccount.Id = 0, Tr('Nova conta'), Tr('Conta: ') + FAccount.Name);
   ClientWidth := ScaleValue(1220);
   ClientHeight := ScaleValue(640);
   Position := poOwnerFormCenter;
@@ -223,26 +228,26 @@ begin
 
   Footer := NewPanel(Self, alBottom, 68);
   Footer.Padding.SetBounds(Round(S.S4), Round(S.S3), Round(S.S4), Round(S.S3));
-  NewButton('Salvar', bvPrimary, SaveClick, Footer, alRight).Default := True;
-  NewButton('Cancelar', bvOutline, CancelClick, Footer, alRight).Cancel := True;
-  FDelete := NewButton('Excluir conta', bvGhost, DeleteClick, Footer, alLeft);
+  NewButton(Tr('Salvar'), bvPrimary, SaveClick, Footer, alRight).Default := True;
+  NewButton(Tr('Cancelar'), bvOutline, CancelClick, Footer, alRight).Cancel := True;
+  FDelete := NewButton(Tr('Excluir conta'), bvGhost, DeleteClick, Footer, alLeft);
   FDelete.Visible := FAccount.Id <> 0;
 
   Body := NewPanel(Self, alClient);
-  Conn := NewFieldset(Body, 'Conexão', alLeft);
+  Conn := NewFieldset(Body, Tr('Conexão'), alLeft);
   Conn.Width := ScaleValue(370);
-  Search := NewFieldset(Body, 'Busca', alLeft);
+  Search := NewFieldset(Body, Tr('Busca'), alLeft);
   Search.Width := ScaleValue(370);
   Search.Left := 2000;
   RightCol := NewPanel(Body, alClient);
-  Rules := NewFieldset(RightCol, 'Avisos', alTop);
+  Rules := NewFieldset(RightCol, Tr('Avisos'), alTop);
   Rules.Height := ScaleValue(300);
-  Due := NewFieldset(RightCol, 'Prazo', alClient);
+  Due := NewFieldset(RightCol, Tr('Prazo'), alClient);
   Due.Top := 100000;
 
   // Conexão
   FKind := TUISelect.Create(Self);
-  FKind.Caption := 'Provedor';
+  FKind.Caption := Tr('Provedor');
   for K := Low(TProviderKind) to High(TProviderKind) do
     FKind.Items.Add(ProviderNames[K]);
   FKind.OnChange := KindChange;
@@ -251,28 +256,28 @@ begin
   FName := TUIInput.Create(Self);
   FName.LabelMode := ilmBorder;  // rótulo na borda: texto inteiro sem fonte maior
   FName.ReserveHintSpace := False;  // a dica vai dentro do campo; embaixo duplicava
-  FName.LabelText := 'Nome da conta';
-  FName.HintText := 'Como aparece na lista, ex.: Trabalho, Pessoal';
+  FName.LabelText := Tr('Nome da conta');
+  FName.HintText := Tr('Como aparece na lista, ex.: Trabalho, Pessoal');
   FName.Required := True;
   Stack(FName, Conn, Round(S.S2));
 
   FUrl := TUIInput.Create(Self);
   FUrl.LabelMode := ilmBorder;  // rótulo na borda: texto inteiro sem fonte maior
   FUrl.ReserveHintSpace := False;  // a dica vai dentro do campo; embaixo duplicava
-  FUrl.LabelText := 'URL base';
+  FUrl.LabelText := Tr('URL base');
   Stack(FUrl, Conn, Round(S.S2));
 
   FLogin := TUIInput.Create(Self);
   FLogin.LabelMode := ilmBorder;  // rótulo na borda: texto inteiro sem fonte maior
   FLogin.ReserveHintSpace := False;  // a dica vai dentro do campo; embaixo duplicava
-  FLogin.LabelText := 'E-mail da conta Atlassian';
+  FLogin.LabelText := Tr('E-mail da conta Atlassian');
   FLogin.InputType := uitEmail;
   Stack(FLogin, Conn, Round(S.S2));
 
   FToken := TUIInput.Create(Self);
   FToken.LabelMode := ilmBorder;  // rótulo na borda: texto inteiro sem fonte maior
   FToken.ReserveHintSpace := False;  // a dica vai dentro do campo; embaixo duplicava
-  FToken.LabelText := 'Token de acesso';
+  FToken.LabelText := Tr('Token de acesso');
   FToken.PasswordChar := '*';
   FToken.PasswordToggle := True;
   Stack(FToken, Conn, Round(S.S2));
@@ -281,7 +286,7 @@ begin
   TestRow.Top := Conn.ControlCount * 1000;
   TestRow.AlignWithMargins := True;
   TestRow.Margins.SetBounds(0, Round(S.S3), 0, 0);
-  FTest := NewButton('Testar conexão', bvOutline, TestClick, TestRow, alLeft);
+  FTest := NewButton(Tr('Testar conexão'), bvOutline, TestClick, TestRow, alLeft);
 
   FTestResult := TUIAlert.Create(Self);
   FTestResult.Style_ := asSoft;
@@ -289,13 +294,13 @@ begin
   Stack(FTestResult, Conn, Round(S.S3));
 
   // Busca: o que mais entra na lista além do associado/review/manual.
-  FMyPrs := NewToggleRow(Search, 'Meus PRs (aprovação, mudanças e CI)', 0, FMyPrsRow);
-  FOwnRepos := NewToggleRow(Search, 'Issues dos meus repositórios', Round(S.S2), FOwnReposRow);
-  FMentions := NewToggleRow(Search, 'Issues em que fui mencionado', Round(S.S2), FMentionsRow);
+  FMyPrs := NewToggleRow(Search, Tr('Meus PRs (aprovação, mudanças e CI)'), 0, FMyPrsRow);
+  FOwnRepos := NewToggleRow(Search, Tr('Issues dos meus repositórios'), Round(S.S2), FOwnReposRow);
+  FMentions := NewToggleRow(Search, Tr('Issues em que fui mencionado'), Round(S.S2), FMentionsRow);
   FExtraQuery := TUIInput.Create(Self);
   FExtraQuery.LabelMode := ilmBorder;  // rótulo na borda: texto inteiro sem fonte maior
   FExtraQuery.ReserveHintSpace := False;  // a dica vai dentro do campo; embaixo duplicava
-  FExtraQuery.LabelText := 'Busca extra';
+  FExtraQuery.LabelText := Tr('Busca extra');
   Stack(FExtraQuery, Search, Round(S.S3));
   FInclude := TUIInput.Create(Self);
   FInclude.LabelMode := ilmBorder;  // rótulo na borda: texto inteiro sem fonte maior
@@ -308,8 +313,8 @@ begin
   Row := NewPanel(Search, alTop, 64);
   Stack(Row, Search, Round(S.S2));
   FPollMinutes := TUINumberInput.Create(Self);
-  FPollMinutes.LabelText := 'Buscar a cada (0 = padrão)';
-  FPollMinutes.SuffixText := 'min';
+  FPollMinutes.LabelText := Tr('Buscar a cada (0 = padrão)');
+  FPollMinutes.SuffixText := Tr('min');
   FPollMinutes.Min := 0;
   FPollMinutes.Max := 240;
   FPollMinutes.Width := ScaleValue(200);
@@ -317,7 +322,7 @@ begin
   FPollMinutes.Parent := Row;
 
   // Avisos
-  FEnabled := NewToggleRow(Rules, 'Conta ligada', 0, Dummy);
+  FEnabled := NewToggleRow(Rules, Tr('Conta ligada'), 0, Dummy);
 
   // Tipos de aviso em duas colunas; SyncKindFields mostra só os do provedor.
   FEventsHost := NewPanel(Rules, alTop, 28);
@@ -325,7 +330,7 @@ begin
   for E := Low(TEventKind) to High(TEventKind) do
   begin
     FEvents[E] := TUICheckbox.Create(Self);
-    FEvents[E].Caption := EventNames[E];
+    FEvents[E].Caption := Tr(EventNames[E]);
     FEvents[E].Parent := FEventsHost;
   end;
 
@@ -333,8 +338,8 @@ begin
   FDueField := TUIInput.Create(Self);
   FDueField.LabelMode := ilmBorder;  // rótulo na borda: texto inteiro sem fonte maior
   FDueField.ReserveHintSpace := False;  // a dica vai dentro do campo; embaixo duplicava
-  FDueField.LabelText := 'Campo da data de entrega (Jira)';
-  FDueField.HintText := 'Nome ou id do campo, ex.: Data Acordo Entrega. Vazio = Data limite.';
+  FDueField.LabelText := Tr('Campo da data de entrega (Jira)');
+  FDueField.HintText := Tr('Nome ou id do campo, ex.: Data Acordo Entrega. Vazio = Data limite.');
   Stack(FDueField, Due, 0);
 
   // Três números lado a lado.
@@ -343,13 +348,13 @@ begin
   FDueDays := TUINumberInput.Create(Self);
   FWarnDays := TUINumberInput.Create(Self);
   FCriticalDays := TUINumberInput.Create(Self);
-  FDueDays.LabelText := 'Avisar com';
-  FWarnDays.LabelText := 'Laranja até';
-  FCriticalDays.LabelText := 'Vermelho até';
+  FDueDays.LabelText := Tr('Avisar com');
+  FWarnDays.LabelText := Tr('Laranja até');
+  FCriticalDays.LabelText := Tr('Vermelho até');
   N := 0;
   for var NI in [FDueDays, FWarnDays, FCriticalDays] do
   begin
-    NI.SuffixText := 'dias';
+    NI.SuffixText := Tr('dias');
     NI.Min := 0;
     NI.Max := 90;
     Col := NewPanel(Row, alLeft);
@@ -378,8 +383,8 @@ begin
   N := 0;
   for E := Low(TEventKind) to High(TEventKind) do
   begin
-    FEvents[E].Visible := not ((E in GitHubOnlyEvents) and (Kind <> pkGitHub)) and
-      not ((E = ekFlagged) and (Kind = pkGitHub));
+    FEvents[E].Visible := not ((E in GitHubOnlyEvents) and not (Kind in RepoKinds)) and
+      not ((E = ekFlagged) and (Kind in RepoKinds));
     if not FEvents[E].Visible then
       Continue;
     FEvents[E].SetBounds((N mod 2) * ScaleValue(CEventColW), (N div 2) * ScaleValue(CEventRowH),
@@ -388,39 +393,61 @@ begin
   end;
   FEventsHost.Height := ((N + 1) div 2) * ScaleValue(CEventRowH);
   // GitHub: issue não tem prazo; vem de um campo de data do Projects.
-  if Kind = pkGitHub then
-  begin
-    FDueField.LabelText := 'Campo de data do Projects (GitHub)';
-    FDueField.HintText := 'Nome do campo de data no Projects, ex.: Prazo. Vazio = sem prazo.';
-  end
+  case Kind of
+    pkGitHub:
+      begin
+        FDueField.LabelText := Tr('Campo de data do Projects (GitHub)');
+        FDueField.HintText := Tr('Nome do campo de data no Projects, ex.: Prazo. Vazio = sem prazo.');
+      end;
+    pkGitLab:
+      begin
+        // GitLab já tem due_date na issue (e o milestone como reserva).
+        FDueField.LabelText := Tr('Prazo');
+        FDueField.HintText := Tr('O GitLab usa a data de entrega da issue ou do milestone.');
+      end;
+    pkAzure:
+      begin
+        FDueField.LabelText := Tr('Campo de prazo (Azure)');
+        FDueField.HintText := Tr('Nome de referência, ex.: Custom.Prazo. Vazio = Due Date ou Target Date.');
+      end;
   else
-  begin
-    FDueField.LabelText := 'Campo da data de entrega (Jira)';
-    FDueField.HintText := 'Nome ou id do campo, ex.: Data Acordo Entrega. Vazio = Data limite.';
+    FDueField.LabelText := Tr('Campo da data de entrega (Jira)');
+    FDueField.HintText := Tr('Nome ou id do campo, ex.: Data Acordo Entrega. Vazio = Data limite.');
   end;
-  FMyPrsRow.Visible := Kind = pkGitHub;
-  FMentionsRow.Visible := Kind = pkGitHub;
+  FDueField.Enabled := Kind <> pkGitLab;
+  FMyPrsRow.Visible := Kind in RepoKinds;
+  FMentionsRow.Visible := Kind in [pkGitHub, pkGitLab, pkAzure];
   FOwnReposRow.Visible := Kind = pkGitHub;
-  if Kind = pkGitHub then
+  if Kind in RepoKinds then
   begin
-    FExtraQuery.HintText := 'Query do GitHub, ex.: repo:dono/app label:bug';
-    FInclude.LabelText := 'Só destes repositórios ou donos';
-    FInclude.HintText := 'dono/repo ou dono, separados por vírgula. Vazio = todos.';
-    FExclude.LabelText := 'Ignorar repositórios ou donos';
+    if Kind = pkGitLab then
+      FExtraQuery.HintText := Tr('Parâmetros da API de issues, ex.: labels=bug&milestone=Sprint 5')
+    else
+      FExtraQuery.HintText := Tr('Query do GitHub, ex.: repo:dono/app label:bug');
+    FInclude.LabelText := Tr('Só destes repositórios ou donos');
+    FInclude.HintText := Tr('dono/repo ou dono, separados por vírgula. Vazio = todos.');
+    FExclude.LabelText := Tr('Ignorar repositórios ou donos');
+  end
+  else if Kind = pkAzure then
+  begin
+    FExtraQuery.HintText := 'Trecho de WIQL, ex.: [System.AreaPath] UNDER ''App\Pagamentos''';
+    FInclude.LabelText := Tr('Só destes projetos');
+    FInclude.HintText := Tr('Nome do projeto, separados por vírgula. Vazio = todos.');
+    FExclude.LabelText := Tr('Ignorar projetos');
   end
   else
   begin
-    FExtraQuery.HintText := 'JQL, ex.: project = ABC AND labels = urgente';
-    FInclude.LabelText := 'Só destes projetos';
-    FInclude.HintText := 'Chave do projeto (ex.: APP), separadas por vírgula. Vazio = todos.';
-    FExclude.LabelText := 'Ignorar projetos';
+    FExtraQuery.HintText := Tr('JQL, ex.: project = ABC AND labels = urgente');
+    FInclude.LabelText := Tr('Só destes projetos');
+    FInclude.HintText := Tr('Chave do projeto (ex.: APP), separadas por vírgula. Vazio = todos.');
+    FExclude.LabelText := Tr('Ignorar projetos');
   end;
-  FExclude.HintText := 'Mesmo formato. Acompanhamento manual nunca é ignorado.';
-  FUrl.HintText := UrlHints[Kind];
+  FExclude.HintText := Tr('Mesmo formato. Acompanhamento manual nunca é ignorado.');
+  FUrl.HintText := Tr(UrlHints[Kind]);
   if FAccount.Id = 0 then
-    FToken.HintText := TokenHints[Kind]
+    FToken.HintText := Tr(TokenHints[Kind])
   else
-    FToken.HintText := 'Já existe um token salvo. Deixe vazio para manter.';
+    FToken.HintText := Tr('Já existe um token salvo. Deixe vazio para manter.');
 end;
 
 procedure TAccountForm.LoadFields;
@@ -530,13 +557,13 @@ begin
           if Err = '' then
           begin
             FTestResult.Tone := atSuccess;
-            FTestResult.Title := 'Conectado';
-            FTestResult.Message_ := 'Entrou como ' + Who;
+            FTestResult.Title := Tr('Conectado');
+            FTestResult.Message_ := Tr('Entrou como ') + Who;
           end
           else
           begin
             FTestResult.Tone := atError;
-            FTestResult.Title := 'Não conectou';
+            FTestResult.Title := Tr('Não conectou');
             FTestResult.Message_ := Err;
           end;
           FTestResult.Visible := True;
@@ -553,13 +580,13 @@ begin
   FToken.ErrorMessage := '';
   if FAccount.Name = '' then
   begin
-    FName.ErrorMessage := 'Informe um nome';
+    FName.ErrorMessage := Tr('Informe um nome');
     Exit;
   end;
   Token := FToken.Value.Trim;
   if (FAccount.Id = 0) and (Token = '') then
   begin
-    FToken.ErrorMessage := 'Informe o token';
+    FToken.ErrorMessage := Tr('Informe o token');
     Exit;
   end;
   Store.SaveAccount(FAccount);
@@ -570,8 +597,8 @@ end;
 
 procedure TAccountForm.DeleteClick(Sender: TObject);
 begin
-  if not TUIConfirm.Show(TVclWinControlContainer.Create(Self, False), 'Excluir conta',
-    'Excluir "' + FAccount.Name + '", o token salvo e o histórico dela?', btError) then
+  if not TUIConfirm.Show(TVclWinControlContainer.Create(Self, False), Tr('Excluir conta'),
+    Tr('Excluir "') + FAccount.Name + Tr('", o token salvo e o histórico dela?'), btError) then
     Exit;
   Store.DeleteAccount(FAccount.Id);
   DeleteSecret(FAccount.SecretTarget);

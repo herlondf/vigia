@@ -5,7 +5,7 @@ Manual de uso, do instalador ao dia a dia. Leia na ordem na primeira vez. Depois
 | # | Capítulo | Para quê |
 |---|---|---|
 | 1 | [Instalação](01-instalacao.md) | Instalar, abrir, atualizar e remover |
-| 2 | [Contas](02-contas.md) | Cadastrar GitHub, Jira Server/DC e Jira Cloud |
+| 2 | [Contas](02-contas.md) | Cadastrar GitHub, GitLab, Jira Server/DC, Jira Cloud e Azure DevOps |
 | 3 | [Uso diário](03-uso-diario.md) | Dashboard, lista, filtros, tags, painel da issue e ações |
 | 4 | [Avisos](04-avisos.md) | Quando o Vigia avisa, silenciar, não perturbe |
 | 5 | [Assistente de IA](05-assistente.md) | Provedor, chave, ferramentas, IA automática e limite de gasto |

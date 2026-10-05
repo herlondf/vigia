@@ -1,0 +1,628 @@
+Anthropic (Claude)
+OpenAI
+xAI (Grok)
+DeepSeek
+Groq
+OpenRouter
+Ollama (local)
+Outro compatível com OpenAI
+%d conta(s), %d tag(s), %d configuração(ões).
+ %d token(s) não vieram: edite a conta e cole de novo.
+Arquivo não é um backup do Vigia
+%s: venceu há %d dia(s)
+%s: vence %s
+em %d dia(s)
+Job: 
+Fui associado
+Novo comentário
+Menção
+Mudança de status
+Prazo chegando
+Prazo vencido
+Review de PR pedido
+Sinalizada
+PR aprovado
+Mudanças pedidas
+CI falhou
+GitHub
+Jira Server/DC
+Jira Cloud
+GitLab
+Azure DevOps
+Jira
+Azure
+Nova conta
+Conta: 
+Salvar
+Cancelar
+Excluir conta
+Conexão
+Busca
+Avisos
+Prazo
+Provedor
+Nome da conta
+Como aparece na lista, ex.: Trabalho, Pessoal
+URL base
+E-mail da conta Atlassian
+Token de acesso
+Testar conexão
+Meus PRs (aprovação, mudanças e CI)
+Issues dos meus repositórios
+Issues em que fui mencionado
+Busca extra
+Buscar a cada (0 = padrão)
+min
+Conta ligada
+Campo da data de entrega (Jira)
+Nome ou id do campo, ex.: Data Acordo Entrega. Vazio = Data limite.
+Avisar com
+Laranja até
+Vermelho até
+dias
+Campo de data do Projects (GitHub)
+Nome do campo de data no Projects, ex.: Prazo. Vazio = sem prazo.
+O GitLab usa a data de entrega da issue ou do milestone.
+Campo de prazo (Azure)
+Nome de referência, ex.: Custom.Prazo. Vazio = Due Date ou Target Date.
+Parâmetros da API de issues, ex.: labels=bug&milestone=Sprint 5
+Query do GitHub, ex.: repo:dono/app label:bug
+Só destes repositórios ou donos
+dono/repo ou dono, separados por vírgula. Vazio = todos.
+Ignorar repositórios ou donos
+Só destes projetos
+Nome do projeto, separados por vírgula. Vazio = todos.
+Ignorar projetos
+JQL, ex.: project = ABC AND labels = urgente
+Chave do projeto (ex.: APP), separadas por vírgula. Vazio = todos.
+Mesmo formato. Acompanhamento manual nunca é ignorado.
+Já existe um token salvo. Deixe vazio para manter.
+Conectado
+Entrou como 
+Não conectou
+Informe um nome
+Informe o token
+Excluir "
+", o token salvo e o histórico dela?
+PAT classic com os escopos repo e notifications
+Personal Access Token (Perfil > Tokens de acesso pessoal)
+API token de id.atlassian.com/manage-profile/security
+Personal access token com o escopo api (ou read_api só para ler)
+PAT do Azure DevOps com Work Items (leitura e escrita)
+Em andamento: alguém está trabalhando nela.
+Concluída.
+Ainda não começou (a fazer).
+Venceu há %d dia(s).
+Vence hoje.
+Faltam %d dia(s).
+ Fica laranja com %d e vermelho com %d dias.
+Resumir a conversa e sugerir resposta (IA)
+Registrar tempo
+Abrir no navegador
+Fechar (Esc)
+Escrever um comentário
+Comentar
+Comentários
+Histórico
+Detalhes
+Impedida
+Marcada com Flagged no Jira: alguém sinalizou um impedimento.
+Entrega 
+Responsável: 
+Sem responsável
+✕ CI falhou
+  (abrir)
+✓ CI passou
+CI rodando
+Sem comentários para resumir
+Issue 
+Você ajuda a acompanhar issues. Responda em português, sem markdown, exatamente neste formato:
+RESUMO: até 3 frases sobre o estado da conversa e o que estão esperando do usuário.
+RESPOSTA: um rascunho curto de resposta, em primeira pessoa, no tom da conversa.
+RESPOSTA:
+RESUMO:
+Resumo (IA):
+IA: 
+IA sugere: 
+Aplicar: botão direito na issue › Ações › Aplicar sugestão da IA
+Carregando...
+Sem descrição.
+Anexos
+• %s (%d KB)
+Ligações
+Não deu para buscar os detalhes: 
+Não deu para buscar os comentários: 
+Ninguém comentou ainda.
+Você
+Nenhum aviso desta issue ainda.
+Escreva o comentário antes
+Não comentou: 
+Comentário publicado em 
+Acompanhar
+Acompanhar 
+ · entra na lista mesmo sem ser sua
+Vigia
+Vigia 
+Win+Alt+V já está em uso por outro programa
+Tema claro/escuro
+Conta exibida em todas as telas e no Ctrl+K
+Repositório exibido em Issues e no Dashboard
+Ctrl+K
+Buscar issue ou comando...
+Filtros
+Agrupar
+Agrupa a lista por repositório (GitHub) ou projeto (Jira)
+Tags
+Botão direito numa issue › Tag › Gerenciar para criar (ex.: #Bug, #Feature)
+Nenhuma conta ainda
+Adicione uma conta do GitHub ou do Jira para o Vigia começar a acompanhar.
+Geral
+Iniciar com o Windows
+Abre o Vigia na bandeja quando você entra no Windows. Vale só para este usuário.
+Buscar a cada
+Intervalo entre as consultas ao GitHub e ao Jira.
+Tema
+Seguir o Windows ou fixar claro ou escuro.
+Seguir o Windows
+Claro
+Escuro
+Atalho global
+Win+Alt+V abre o Vigia de qualquer programa; de novo, esconde.
+Atualizações
+Versão 
+. Procura release nova uma vez por dia (só na versão instalada).
+Procurar agora
+Só avisar
+Instalar sozinho
+Não procurar
+Notificações
+Estilo do aviso
+Popup do Vigia no canto da tela, ou a notificação padrão do Windows.
+Popup do Vigia
+Windows
+Tempo na tela
+Quanto o popup fica visível. Com o mouse em cima ele espera.
+Resumo do dia
+Um aviso por dia com o que vence, o que está impedido e os comentários novos.
+Não perturbe
+Nesse horário os avisos esperam e chegam juntos quando o silêncio acaba.
+Testar
+Mostra um aviso de exemplo com o estilo escolhido.
+Mostrar aviso
+Assistente de IA
+Anthropic usa o assistente completo da suíte; os outros, a API compatível com OpenAI.
+Endereço da API
+Já vem preenchido; troque para um gateway próprio ou Ollama remoto.
+Chave
+Uma por provedor, no Credential Manager deste usuário.
+Modelo
+Digite ou escolha da lista que o provedor devolve.
+Listar
+Preço (US$ por milhão de tokens)
+Entrada e saída. Claude já vem com o preço público; nos outros, preencha para ver o custo.
+saída
+Backup
+Contas e configurações
+Arquivo com contas, tags, issues acompanhadas e preferências. Os tokens vão cifrados e só voltam neste usuário do Windows.
+Importar...
+Exportar...
+IA automática
+Limite por mês (US$)
+Chegou no limite, o chat e as tarefas automáticas param até o mês virar. 0 = sem limite.
+Modelo das tarefas automáticas
+Mais barato que o do chat. Vazio = o mesmo do chat.
+Resumo do dia escrito pela IA
+No horário do resumo. Sem IA, vai o resumo em números.
+Alerta de risco
+Uma vez por dia: até 3 issues com chance de atrasar ou travar.
+Rascunho de horas no fim do dia
+Às 17:30, em dias úteis. O assistente lança se você pedir.
+Causa da falha do CI
+Quando um PR seu fica vermelho, lê o log do job e explica.
+Triagem de issues novas
+Sugere tag e prioridade para até 3 issues novas por busca. Aplicar fica no botão direito › Ações.
+Uso da IA (custo estimado)
+Perguntas no mês
+Tokens por pergunta
+média, entrada + saída
+Custo no mês
+US$ 
+Custo por pergunta
+Custo por dia, últimos 30 dias
+Padrão da Anthropic
+ex.: 
+nome do modelo
+Chave salva (digite para trocar)
+Ollama local não precisa de chave
+Cole a chave aqui
+Não listou: 
+O provedor não devolveu modelos
+%d entrada · %d saída
+≈ R$ %s · dólar a R$ %s
+Acme · APP-123 · Novo comentário
+Maria: pode validar o ajuste no checkout antes de subir?
+assets\\assistant
+Posso resumir suas issues, registrar horas, comentar, mudar status e filtrar a tela. Toda escrita pede sua confirmação. Ex.: "o que vence esta semana?" ou "lance 2h na PROJ-1".
+Ações / Atualizar agora
+Ações / Alternar tema claro e escuro
+Ações / Nova conta
+Ações / Assistente IA
+Ir para 
+Navegar
+Issues
+desligada
+com erro na última busca
+ligada
+  ·  última busca 
+  ·  ainda não buscou
+Avisos por dia, últimos 14 dias
+Todas as contas
+Todas as contas  ▾
+Todos os repositórios
+Todos os repositórios  ▾
+Informe a chave
+Chave de 
+ salva.
+Você é o assistente do Vigia, um app de bandeja que acompanha issues do GitHub e do Jira para o usuário 
+Responda em português do Brasil, curto e direto, citando as chaves das issues. Hoje é 
+Você tem ferramentas para agir: registrar horas, comentar, mudar status, marcar impedimento, atribuir, criar issue, abrir uma issue na tela, acompanhar, criar tag e filtrar a lista. Toda escrita no Jira/GitHub pede confirmação do usuário na própria conversa. Use vigia_issue_details para ler descrição e comentários antes de responder sobre o conteúdo de uma issue.
+Horas lançadas no Jira: %.1fh hoje, %.1fh na semana.
+Rascunho de horas de hoje (feito por você no fim do dia; o usuário pode pedir para lançar):
+## Contas
+- %s (%s, %s): %s; prazo laranja até %d dias, vermelho até %d dias%s
+; ERRO na última busca: 
+## Issues acompanhadas
+chave | título | status | conta | vínculo | impedida | entrega | responsável | atualizada | comentários | último comentário
+comigo
+manual
+review
+observando
+não
+ | CI 
+ | sprint ativa
+## Avisos recentes (mais novos primeiro)
+Issue %s não está entre as acompanhadas
+Lê descrição, anexos, ligações e os últimos comentários de uma issue.
+Descrição: 
+Ligação: %s %s (%s)
+Comentário de %s em %s: %s
+Chave da issue, ex.: PROJ-123 ou dono/repo#12
+Registra horas trabalhadas numa issue do Jira.
+ não tem registro de horas pelo Vigia
+Horas registradas
+Chave da issue
+Horas, ex.: 1.5
+Hora de início HH:MM; vazio = 09:00
+O que foi feito
+Publica um comentário na issue.
+Comentário publicado
+Texto do comentário
+Lista os status para onde a issue pode ir agora.
+ (pede campos na tela)
+Muda o status da issue (use um nome de vigia_list_transitions).
+Essa transição pede campos. Peça ao usuário para usar botão direito > Mudar status
+Status alterado para 
+Status "%s" não disponível agora
+Status de destino
+Jira: marca ou tira impedimento (Flagged) e comenta o motivo.
+Feito
+true marca, false tira
+Motivo (vira comentário)
+Atribui a issue ao usuário.
+Atribuída
+Cria uma issue no Jira (projeto) ou GitHub (dono/repo).
+Criada: 
+Conta não encontrada; use o nome que aparece em Contas
+Nome da conta no Vigia
+Chave do projeto Jira ou dono/repo do GitHub
+Título
+Descrição
+Abre o painel da issue na tela do Vigia.
+Aberta
+Passa a acompanhar uma issue pela chave (PROJ-123 ou dono/repo#12).
+Acompanhando
+Cria uma #tag local que agrupa issues por palavras do título.
+Tag #
+ criada
+Nome sem #
+Palavras do título separadas por vírgula
+Nome da conta; vazio = primeira
+Filtra a lista de Issues na tela.
+%d issues na lista
+Filtros separados por vírgula: Comigo, Atrasadas, Review, Manuais, Impedidas, Meus PRs, Sprint
+Nome de uma tag
+dono/repo do GitHub
+- %s (palavras: %s)
+Issue %s no %s: "%s". Status: %s. Prazo: %s. Responsável: %s.
+sem
+ninguém
+Tags do usuário:
+(nenhuma)
+Você faz triagem de issues para um desenvolvedor. Seja direto. Responda só o JSON pedido.
+A IA não devolveu uma sugestão válida
+Triagem · 
+Triagem: 
+ marcada com #
+Prioridade
+Mudar a prioridade de %s para "%s" no Jira?
+Mudar
+Prioridade de 
+ alterada
+High
+Medium
+Low
+Prioridade "
+" não existe neste Jira
+Você analisa falhas de CI. Responda em português, em até 3 frases curtas: causa provável e o que fazer. Sem markdown.
+Job "
+" do PR 
+ falhou. Fim do log:
+CI de 
+ · causa provável
+Aponte até 3 issues com maior risco de atrasar ou travar (prazo perto, impedida, parada há dias, CI falhando). Uma linha por issue: chave e motivo. Se não houver risco real, responda só NADA.
+Vigia · riscos de hoje
+Fim do dia. Já lancei %.1fh hoje. Pelos avisos e issues de hoje, rascunhe lançamentos de horas que faltam: uma linha por issue no formato "CHAVE · horas · o que foi feito". Se não houver o que lançar, responda só NADA.
+Vigia · rascunho de horas
+Peça ao assistente: "lance o rascunho de horas".
+atrasada
+meu PR
+mencionado
+busca
+meu repo
+Aprovado
+CI ok
+Prazo 
+silenciada
+Cadastre uma conta do GitHub ou do Jira em Contas.
+Nada acompanhado ainda
+A lista enche depois da primeira busca.
+Atualizar agora
+Nada com esse filtro
+Filtrando por: 
+Nenhuma issue nesta conta.
+Limpar filtros
+%d atrasada(s)
+ impedida(s)
+recolhido · clique para abrir
+Gerenciar tags...
+  (pelo título)
+Atribuir a mim
+Triar com IA
+Aplicar sugestão da IA
+Registrar horas...
+Adicionar tag...
+Adicionar label...
+Aprovar MR
+Aprovar PR
+Abrir job que falhou
+Mudar prioridade...
+Tirar impedimento...
+Marcar impedimento...
+Não deu certo: 
+Ver detalhes
+Mudar status...
+Copiar chave
+Ações
+Reativar avisos
+Silenciar até amanhã
+Silenciar até mudar status
+Tag
+Parar de acompanhar
+Faltam %d dia(s). Laranja com %d, vermelho com %d.
+Sem avisos desta issue até o prazo do silêncio. Botão direito para reativar.
+Status no 
+Status de 
+ alterado
+Atribuir %s a você no %s?
+Atribuir
+ atribuída a você
+Adicionar label
+A label entra em 
+Label
+Label "%s" adicionada em %s
+Enviar aprovação para 
+Aprovar
+ aprovado
+Não carregou as prioridades: 
+Mudar prioridade
+Nova prioridade de 
+Prioridade de %s: %s
+Marcar impedimento
+Tirar impedimento
+Marca Flagged em 
+Tira o Flagged de 
+ e comenta o motivo na issue.
+Motivo
+ marcada como impedida
+Impedimento de 
+ removido
+%s entra em "%s" pelo título. Mude as palavras em Gerenciar tags.
+ silenciada até amanhã às 8h
+ silenciada até sair de "
+Avisos de 
+ reativados
+ copiada
+Parei de acompanhar 
+Desfazer
+Use PROJ-123 (Jira), dono/repo#12 (GitHub, GitLab) ou Projeto#123 (Azure)
+Nenhuma conta 
+ cadastrada
+Escolha a conta no seletor do topo
+Conferindo 
+ não encontrada em 
+Acompanhando 
+Buscar, comandos e acompanhar
+Atualizar
+Ctrl+1-4
+Abas
+Esc
+Fechar
+Horas que você lançou no Jira (worklog)
+%d itens
+  ·  atualizando...
+  ·  atualizado 
+  ·  próxima em %d:%.2d
+Novidade nas issues!
+Tem issue atrasada
+Como posso ajudar?
+Não deu para procurar: 
+Você já está na versão mais nova (
+Atualizar para 
+ disponível
+Você está na 
+. Clique para atualizar; o Vigia fecha e volta sozinho.
+Esta cópia não foi instalada pelo instalador. Baixe a 
+ na página de releases.
+Baixando o Vigia 
+Atualização falhou: 
+Não abriu o instalador: 
+Exportar contas e configurações
+Backup do Vigia (*.json)|*.json
+Vigia-backup-
+Backup salvo em 
+Importar contas e configurações
+Importar backup
+Conta com o mesmo nome e provedor é atualizada; as outras entram. Tags, issues acompanhadas e preferências também.
+Importar
+Não importou: 
+Importado: 
+ Tema e intervalos valem ao reabrir o Vigia.
+Comentário enviado
+Comentário não foi
+Vigia · %d avisos durante o silêncio
+Escreva o resumo de bom dia em até 4 frases curtas: o que vence, o que está impedido, o que mudou desde ontem e por onde começar. Cite as chaves. Sem markdown.
+Bom dia · resumo do Vigia
+%d vencendo ou vencidas, %d chegando, %d impedidas. (IA indisponível: %s)
+%d vencendo ou vencidas, %d chegando, %d impedidas, %d comentário(s) nas últimas 24 h.
+Nenhuma conta ligada
+Vigia · atualizando...
+Lançado: %.1fh hoje · %.1fh na semana
+Vigia · 
+Acompanhando %d itens. Aviso o que mudar daqui pra frente.
+Vigia · %d novidades
+Falha na busca
+Nada novo
+Vigia · %d itens · %s%s
+ · com erro
+Agora
+Comigo
+Atrasadas
+Review
+Manuais
+Impedidas
+Meus PRs
+Sprint
+Dashboard
+Contas
+Configurações
+GitHub ou GitLab
+Fechar a janela mini
+Arraste para mover
+Agora %d  ·  Atrasadas %d  ·  Comigo %d
+%d issues acompanhadas. Arraste para mover.
+Nada pedindo ação agora.
+Dispensar
+Silenciar
+Sem avisos desta issue até amanhã às 8h
+Responder
+Abrir
+Ver no Vigia
+Enviar
+Comentário
+Mudar status: 
+Aplicar
+Status atual: 
+Mover para
+Carregando transições...
+Não carregou as transições
+Escolha o novo status
+Nenhuma transição disponível
+Escolha
+Preencha os campos obrigatórios
+O servidor recusou
+Você já lançou %.1fh hoje e %.1fh nesta semana
+Informe as horas
+%.1fh registradas em %s
+Registrar
+Somando suas horas da semana...
+Horas
+Dia
+Início
+O que foi feito (opcional)
+Confirmar
+Consulta
+Cadastro
+Agrupe issues por projeto. A issue entra na tag pelo título ou pelo botão direito na lista (Tag).
+Nenhuma tag ainda. Clique no + para criar.
+Nome da tag (ex.: Pagamentos)
+Palavras no título (opcional, separadas por vírgula ou ;)
+Ex.: "pagamento, pix" pega toda issue com uma dessas palavras no título. Sem palavras, a tag vale só para as issues marcadas à mão.
+Nova tag
+Cancelar (Esc)
+Salvar (Enter)
+Editando #
+Dê um nome para a tag
+Já existe uma tag com esse nome nesta conta
+Clique de novo na lixeira para excluir
+Título com: 
+Só marcação manual
+  ·  %d marcada(s) à mão
+Ver na aba Issues
+Acompanhadas
+issues abertas
+associadas a mim
+abertos por mim
+com Flagged
+Prazo perto
+laranja ou vermelho
+Por tipo
+Por andamento
+Nenhuma issue nesta visão.
+PRs
+Itens
+A fazer
+Em andamento
+Concluído
+Entregas no prazo
+Nenhuma issue com milestone com data.
+Nenhuma issue com prazo.
+%d de %d com prazo
+Nenhum PR seu aberto.
+Em review
+Mudanças
+Aprovados
+Funil do andamento
+Todas
+Começadas
+Concluídas
+Por repositório
+Por status
+Pendências por #tag
+Crie tags (botão direito numa issue › Tag) para ver as pendências por projeto.
+Próximas entregas
+vencida há %d d
+em %d d
+Configure o campo de entrega na conta, se o Jira usar um.
+Atividade recente
+Mudanças nas issues aparecem aqui.
+Bem-vindo ao Vigia
+Suas issues do GitHub e do Jira na bandeja, com aviso do que mudar.
+Conta
+GitHub, Jira Server ou Jira Cloud
+O Vigia confere o token
+Pronto
+Busca a cada 5 min e avisa
+Adicionar a primeira conta
+Só issues
+Só PRs
+Aguardando review
+Com prazo
+Status: 
+Programs\\Vigia
+Accept
+GitHub respondeu %d
+A release não informa o hash do instalador
+Vigia-Setup-%s.exe
+Download respondeu %d
+O instalador baixado não confere com o hash da release
+ /SHOW=1

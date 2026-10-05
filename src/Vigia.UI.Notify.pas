@@ -14,10 +14,12 @@ uses
   Vcl.Controls,
   Vcl.Forms,
   Vcl.ExtCtrls,
-  UI.Tokens;
+  UI.Tokens,
+  UI.Input;
 
 type
   TNotifyOpenEvent = procedure(const AKey: string; AAccountId: Integer) of object;
+  TNotifyReplyEvent = procedure(const AKey: string; AAccountId: Integer; const AText: string) of object;
 
   TNotifyPopup = class(TForm)
   private
@@ -29,6 +31,13 @@ type
     FClosing: Boolean;
     FTargetX, FTargetY: Integer;  // posição para onde o aviso está indo
     FPlaced: Boolean;             // já tem posição na tela
+    FReplying: Boolean;           // caixa de resposta aberta: aceita foco
+    FReplyRow: TPanel;
+    FReplyBox: TUIInput;
+    procedure MuteClick(Sender: TObject);
+    procedure ReplyClick(Sender: TObject);
+    procedure SendClick(Sender: TObject);
+    procedure ReplyKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
     procedure LifeTick(Sender: TObject);
     procedure FadeTick(Sender: TObject);
     procedure OpenClick(Sender: TObject);
@@ -47,6 +56,8 @@ type
   private
     class var FPopups: TList<TNotifyPopup>;
     class var FOnOpenDetail: TNotifyOpenEvent;
+    class var FOnMute: TNotifyOpenEvent;
+    class var FOnReply: TNotifyReplyEvent;
     class var FMover: TTimer;
     class procedure Reflow;
     class procedure MoverTick(Sender: TObject);
@@ -58,11 +69,15 @@ type
     class procedure Show(const ATitle, ABody, AUrl: string; ATone: TUISemanticTone;
       const AKey: string = ''; AAccountId: Integer = 0; ADurationMs: Integer = 8000);
     class property OnOpenDetail: TNotifyOpenEvent read FOnOpenDetail write FOnOpenDetail;
+    { Botões do aviso de uma issue: silenciar até amanhã e responder ali mesmo. }
+    class property OnMute: TNotifyOpenEvent read FOnMute write FOnMute;
+    class property OnReply: TNotifyReplyEvent read FOnReply write FOnReply;
   end;
 
 implementation
 
 uses
+  Vigia.I18n,
   System.Math,
   System.StrUtils,
   System.UITypes,
@@ -76,6 +91,7 @@ uses
 
 const
   PopupW = 380;
+  PopupWIssue = 450;
   PopupH = 132;
   Gap = 10;
   MaxPopups = 4;
@@ -134,23 +150,28 @@ end;
 
 procedure TNotifyPopup.WMMouseActivate(var Message: TWMMouseActivate);
 begin
-  // Clicar nos botões não tira o foco do app em que o usuário está.
-  Message.Result := MA_NOACTIVATE;
+  // Clicar nos botões não tira o foco do app em que o usuário está; só a
+  // caixa de resposta precisa de teclado.
+  if FReplying then
+    Message.Result := MA_ACTIVATE
+  else
+    Message.Result := MA_NOACTIVATE;
 end;
 
 procedure TNotifyPopup.LifeTick(Sender: TObject);
 var
   P: TPoint;
 begin
-  // Mouse em cima segura o aviso.
+  // Mouse em cima ou resposta aberta seguram o aviso.
   GetCursorPos(P);
-  if PtInRect(BoundsRect, P) then
+  if PtInRect(BoundsRect, P) or FReplying then
     Exit;
   StartClose;
 end;
 
 procedure TNotifyPopup.StartClose;
 begin
+  FReplying := False;
   FLife.Enabled := False;
   FClosing := True;
   // Sai deslizando para a direita enquanto some.
@@ -191,6 +212,48 @@ begin
   if Assigned(TNotifyManager.FOnOpenDetail) then
     TNotifyManager.FOnOpenDetail(FKey, FAccountId);
   StartClose;
+end;
+
+procedure TNotifyPopup.MuteClick(Sender: TObject);
+begin
+  if Assigned(TNotifyManager.FOnMute) then
+    TNotifyManager.FOnMute(FKey, FAccountId);
+  StartClose;
+end;
+
+{ Abre a caixa de resposta: o aviso cresce, passa a aceitar foco e espera. }
+procedure TNotifyPopup.ReplyClick(Sender: TObject);
+begin
+  if FReplying then
+    Exit;
+  FReplying := True;
+  SetWindowLong(Handle, GWL_EXSTYLE, GetWindowLong(Handle, GWL_EXSTYLE) and not WS_EX_NOACTIVATE);
+  FReplyRow.Visible := True;
+  ClientHeight := ClientHeight + FReplyRow.Height;
+  TNotifyManager.Reflow;
+  SetForegroundWindow(Handle);
+  FReplyBox.SetFocus;
+end;
+
+procedure TNotifyPopup.SendClick(Sender: TObject);
+begin
+  if FReplyBox.Value.Trim = '' then
+    Exit;
+  if Assigned(TNotifyManager.FOnReply) then
+    TNotifyManager.FOnReply(FKey, FAccountId, FReplyBox.Value.Trim);
+  FReplying := False;
+  StartClose;
+end;
+
+procedure TNotifyPopup.ReplyKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
+begin
+  if Key = VK_RETURN then
+    SendClick(Sender)
+  else if Key = VK_ESCAPE then
+  begin
+    FReplying := False;
+    StartClose;
+  end;
 end;
 
 procedure TNotifyPopup.DismissClick(Sender: TObject);
@@ -292,6 +355,7 @@ var
   Accent, Body, Foot: TPanel;
   Lbl: TUILabel;
   Btn: TUIButton;
+  Issue: Boolean;
 begin
   // Muitos de uma vez: o mais antigo sai para caber o novo.
   while FPopups.Count >= MaxPopups do
@@ -308,7 +372,11 @@ begin
   F.DoubleBuffered := True;
   F.AlphaBlend := True;
   F.AlphaBlendValue := 0;
-  F.ClientWidth := F.ScaleValue(PopupW);
+  // Aviso de issue tem 4 botões: precisa de mais largura.
+  if (AKey <> '') and not AKey.StartsWith('*') then
+    F.ClientWidth := F.ScaleValue(PopupWIssue)
+  else
+    F.ClientWidth := F.ScaleValue(PopupW);
   F.ClientHeight := F.ScaleValue(PopupH);
 
   Accent := TPanel.Create(F);
@@ -336,17 +404,43 @@ begin
   Foot.Parent := Body;
 
   Btn := TUIButton.Create(F);
-  Btn.Caption := 'Dispensar';
+  Btn.Caption := Tr('Dispensar');
   Btn.Variant := bvGhost;
   Btn.Size := bsSM;
   Btn.AutoWidth := True;
   Btn.OnClick := F.DismissClick;
   Btn.Align := alRight;
   Btn.Parent := Foot;
-  if AUrl <> '' then
+  Issue := (AKey <> '') and not AKey.StartsWith('*');
+  if Issue then
   begin
     Btn := TUIButton.Create(F);
-    Btn.Caption := 'Abrir';
+    Btn.Caption := Tr('Silenciar');
+    Btn.Hint := Tr('Sem avisos desta issue até amanhã às 8h');
+    Btn.ShowHint := True;
+    Btn.Variant := bvGhost;
+    Btn.Size := bsSM;
+    Btn.AutoWidth := True;
+    Btn.OnClick := F.MuteClick;
+    Btn.AlignWithMargins := True;
+    Btn.Margins.SetBounds(0, 0, 4, 0);
+    Btn.Align := alRight;
+    Btn.Parent := Foot;
+    Btn := TUIButton.Create(F);
+    Btn.Caption := Tr('Responder');
+    Btn.Variant := bvGhost;
+    Btn.Size := bsSM;
+    Btn.AutoWidth := True;
+    Btn.OnClick := F.ReplyClick;
+    Btn.AlignWithMargins := True;
+    Btn.Margins.SetBounds(0, 0, 4, 0);
+    Btn.Align := alRight;
+    Btn.Parent := Foot;
+  end
+  else if AUrl <> '' then
+  begin
+    Btn := TUIButton.Create(F);
+    Btn.Caption := Tr('Abrir');
     Btn.Variant := bvGhost;
     Btn.Size := bsSM;
     Btn.AutoWidth := True;
@@ -359,7 +453,7 @@ begin
   if AKey <> '' then
   begin
     Btn := TUIButton.Create(F);
-    Btn.Caption := IfThen(AKey = '*update', 'Atualizar', 'Ver no Vigia');
+    Btn.Caption := IfThen(AKey = '*update', Tr('Atualizar'), Tr('Ver no Vigia'));
     Btn.Size := bsSM;
     Btn.AutoWidth := True;
     Btn.OnClick := F.DetailClick;
@@ -368,6 +462,32 @@ begin
     Btn.Align := alRight;
     Btn.Parent := Foot;
   end;
+
+  // Caixa de resposta: escondida até clicar em Responder.
+  F.FReplyRow := TPanel.Create(F);
+  F.FReplyRow.BevelOuter := bvNone;
+  F.FReplyRow.ParentBackground := False;
+  F.FReplyRow.Color := UIThemeVclBackground;
+  F.FReplyRow.Height := F.ScaleValue(48);
+  F.FReplyRow.Visible := False;
+  F.FReplyRow.Align := alBottom;
+  F.FReplyRow.Parent := Body;
+  Btn := TUIButton.Create(F);
+  Btn.Caption := Tr('Enviar');
+  Btn.Size := bsSM;
+  Btn.AutoWidth := True;
+  Btn.OnClick := F.SendClick;
+  Btn.AlignWithMargins := True;
+  Btn.Margins.SetBounds(6, 8, 0, 8);
+  Btn.Align := alRight;
+  Btn.Parent := F.FReplyRow;
+  F.FReplyBox := TUIInput.Create(F);
+  F.FReplyBox.LabelMode := ilmBorder;
+  F.FReplyBox.ReserveHintSpace := False;
+  F.FReplyBox.LabelText := Tr('Comentário');
+  F.FReplyBox.OnKeyDown := F.ReplyKeyDown;
+  F.FReplyBox.Align := alClient;
+  F.FReplyBox.Parent := F.FReplyRow;
 
   Lbl := TUILabel.Create(F);
   Lbl.Caption := ATitle;

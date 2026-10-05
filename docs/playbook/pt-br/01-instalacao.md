@@ -25,6 +25,14 @@ Atalho na área de trabalho é opcional, numa caixa do instalador.
 
 **Configurações › Geral › Iniciar com o Windows**, ou botão direito no ícone da bandeja. Vale só para o seu usuário.
 
+## Idioma
+
+**Configurações › Geral › Idioma**: português, inglês ou automático (segue o Windows). Vale ao reabrir o Vigia.
+
+## Atalho global
+
+**Win+Alt+V** abre o Vigia de qualquer programa; de novo, esconde. Liga e desliga em **Configurações › Geral › Atalho global**.
+
 ## Atualizar
 
 O Vigia procura versão nova uma vez por dia. Quando acha, avisa: clique no aviso, ou em **Atualizar para x.y.z** no menu da bandeja. Ele baixa, confere o arquivo, instala e volta aberto. Contas, tags e tokens continuam.

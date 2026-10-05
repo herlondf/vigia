@@ -17,6 +17,7 @@ function ManageTags(AOwner: TComponent; const AItem: TItem; AHasItem: Boolean): 
 implementation
 
 uses
+  Vigia.I18n,
   System.SysUtils,
   System.Math,
   System.UITypes,
@@ -148,7 +149,7 @@ var
   Lbl: TUILabel;
   P: TPanel;
 begin
-  Caption := 'Tags';
+  Caption := Tr('Tags');
   ClientWidth := ScaleValue(480);
   ClientHeight := ScaleValue(500);
   Position := poOwnerFormCenter;
@@ -161,8 +162,8 @@ begin
   FTransition.Style := ttSlide;
 
   FTabs := TUITabs.Create(Self);
-  FTabs.AddTab('Consulta');
-  FTabs.AddTab('Cadastro');
+  FTabs.AddTab(Tr('Consulta'));
+  FTabs.AddTab(Tr('Cadastro'));
   FTabs.ActiveIndex := 0;
   FTabs.OnChange := TabChange;
   FTabs.AlignWithMargins := True;
@@ -180,8 +181,8 @@ begin
   P.Align := alClient;
   FPages[0] := P;
   Lbl := TUILabel.Create(Self);
-  Lbl.Caption := 'Agrupe issues por projeto. A issue entra na tag pelo título ou pelo ' +
-    'botão direito na lista (Tag).';
+  Lbl.Caption := Tr('Agrupe issues por projeto. A issue entra na tag pelo título ou pelo ' +
+    'botão direito na lista (Tag).');
   Lbl.Variant := lvMuted;
   Lbl.WordWrap := True;
   Lbl.AutoSize := False;
@@ -200,7 +201,7 @@ begin
   FList.Top := 1000;
   FList.Align := alClient;
   FEmpty := TUILabel.Create(Self);
-  FEmpty.Caption := 'Nenhuma tag ainda. Clique no + para criar.';
+  FEmpty.Caption := Tr('Nenhuma tag ainda. Clique no + para criar.');
   FEmpty.Variant := lvMuted;
   FEmpty.AutoSize := False;
   FEmpty.Height := ScaleValue(24);
@@ -223,7 +224,7 @@ begin
   FHeading.Top := 0;
   FHeading.Align := alTop;
   FName := TUIInput.Create(Self);
-  FName.LabelText := 'Nome da tag (ex.: Pagamentos)';
+  FName.LabelText := Tr('Nome da tag (ex.: Pagamentos)');
   FName.LabelMode := ilmBorder;  // rótulo na borda: texto inteiro sem fonte maior
   FName.ReserveHintSpace := False;  // a dica vai dentro do campo; embaixo duplicava
   FName.AlignWithMargins := True;
@@ -232,7 +233,7 @@ begin
   FName.Top := 1000;
   FName.Align := alTop;
   FKeywords := TUIInput.Create(Self);
-  FKeywords.LabelText := 'Palavras no título (opcional, separadas por vírgula ou ;)';
+  FKeywords.LabelText := Tr('Palavras no título (opcional, separadas por vírgula ou ;)');
   FKeywords.LabelMode := ilmBorder;  // rótulo na borda: texto inteiro sem fonte maior
   FKeywords.ReserveHintSpace := False;  // a dica vai dentro do campo; embaixo duplicava
   FKeywords.AlignWithMargins := True;
@@ -241,8 +242,8 @@ begin
   FKeywords.Top := 2000;
   FKeywords.Align := alTop;
   Lbl := TUILabel.Create(Self);
-  Lbl.Caption := 'Ex.: "pagamento, pix" pega toda issue com uma dessas palavras no título. ' +
-    'Sem palavras, a tag vale só para as issues marcadas à mão.';
+  Lbl.Caption := Tr('Ex.: "pagamento, pix" pega toda issue com uma dessas palavras no título. ' +
+    'Sem palavras, a tag vale só para as issues marcadas à mão.');
   Lbl.Variant := lvMuted;
   Lbl.FontSize := HintFontSize;
   Lbl.Italic := True;
@@ -258,7 +259,7 @@ begin
   // FAB fora do conteúdo: não desliza junto na troca de aba.
   FFab := TUIFAB.Create(Self);
   FFab.IconSvg := CSvgPlus;
-  FFab.Hint := 'Nova tag';
+  FFab.Hint := Tr('Nova tag');
   FFab.OnClick := FabClick;
   FFab.Parent := Self;
   FFab.SetBounds(ClientWidth - FFab.Width - ScaleValue(CFabGap),
@@ -270,7 +271,7 @@ begin
   FCancel.Variant := bvSecondary;
   FCancel.IconSvg := CSvgClose;
   FCancel.CornerRadius := 20;
-  FCancel.Hint := 'Cancelar (Esc)';
+  FCancel.Hint := Tr('Cancelar (Esc)');
   FCancel.ShowHint := True;
   FCancel.OnClick := CancelClick;
   FCancel.Parent := Self;
@@ -316,14 +317,14 @@ begin
   if AIndex = 1 then
   begin
     FFab.IconSvg := CSvgSave;
-    FFab.Hint := 'Salvar (Enter)';
+    FFab.Hint := Tr('Salvar (Enter)');
     FCancel.Visible := True;
     FName.SetFocus;
   end
   else
   begin
     FFab.IconSvg := CSvgPlus;
-    FFab.Hint := 'Nova tag';
+    FFab.Hint := Tr('Nova tag');
     FCancel.Visible := False;
     FConfirmId := 0;
     Reload;
@@ -338,7 +339,7 @@ begin
   FEditId := 0;
   FName.Value := '';
   FKeywords.Value := '';
-  FHeading.Caption := 'Nova tag';
+  FHeading.Caption := Tr('Nova tag');
   if AId <> 0 then
     for T in Store.ListTags do
       if T.Id = AId then
@@ -346,7 +347,7 @@ begin
         FEditId := T.Id;
         FName.Value := T.Name;
         FKeywords.Value := T.Keywords;
-        FHeading.Caption := 'Editando #' + T.Name;
+        FHeading.Caption := Tr('Editando #') + T.Name;
       end;
   ShowTab(1);
 end;
@@ -363,7 +364,7 @@ begin
   T.Keywords := FKeywords.Value.Trim;
   if T.Name = '' then
   begin
-    TUIToastManager.Show('Dê um nome para a tag', ttWarning);
+    TUIToastManager.Show(Tr('Dê um nome para a tag'), ttWarning);
     FName.SetFocus;
     Exit;
   end;
@@ -373,7 +374,7 @@ begin
   except
     on E: Exception do
     begin
-      TUIToastManager.Show('Já existe uma tag com esse nome nesta conta', ttWarning);
+      TUIToastManager.Show(Tr('Já existe uma tag com esse nome nesta conta'), ttWarning);
       Exit;
     end;
   end;
@@ -488,13 +489,13 @@ begin
   UIDrawText(ACanvas, '#' + T.Name, TRectF.Create(L, ARowRect.Top + 10, R, ARowRect.Top + 30),
     NameFont, Tk.Color.Primary);
   if Confirm then
-    Rule := 'Clique de novo na lixeira para excluir'
+    Rule := Tr('Clique de novo na lixeira para excluir')
   else if T.Keywords.Trim <> '' then
-    Rule := 'Título com: ' + T.Keywords
+    Rule := Tr('Título com: ') + T.Keywords
   else
-    Rule := 'Só marcação manual';
+    Rule := Tr('Só marcação manual');
   if (not Confirm) and (T.Manual <> nil) then
-    Rule := Rule + Format('  ·  %d marcada(s) à mão', [Length(T.Manual)]);
+    Rule := Rule + Format(Tr('  ·  %d marcada(s) à mão'), [Length(T.Manual)]);
   if Confirm then
     SubColor := Tk.Color.Error
   else
