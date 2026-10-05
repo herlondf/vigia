@@ -35,6 +35,7 @@ type
     FTestResult: TUIAlert;
     FEnabled: TUIToggle;
     FEvents: array[TEventKind] of TUICheckbox;
+    FEventsHost: TPanel;
     FDueDays: TUINumberInput;
     FDueField: TUIInput;
     FWarnDays: TUINumberInput;
@@ -318,27 +319,14 @@ begin
   // Avisos
   FEnabled := NewToggleRow(Rules, 'Conta ligada', 0, Dummy);
 
-  // Tipos de aviso em duas colunas: par na esquerda, ímpar na direita.
-  Row := nil;
-  N := 0;
+  // Tipos de aviso em duas colunas; SyncKindFields mostra só os do provedor.
+  FEventsHost := NewPanel(Rules, alTop, 28);
+  Stack(FEventsHost, Rules, Round(S.S4));
   for E := Low(TEventKind) to High(TEventKind) do
   begin
-    if N mod 2 = 0 then
-    begin
-      Row := NewPanel(Rules, alTop, 28);
-      Stack(Row, Rules, IfThen(N = 0, Round(S.S4), Round(S.S2)));
-    end;
     FEvents[E] := TUICheckbox.Create(Self);
     FEvents[E].Caption := EventNames[E];
-    if N mod 2 = 0 then
-    begin
-      FEvents[E].Width := ScaleValue(200);
-      FEvents[E].Align := alLeft;
-    end
-    else
-      FEvents[E].Align := alClient;
-    FEvents[E].Parent := Row;
-    Inc(N);
+    FEvents[E].Parent := FEventsHost;
   end;
 
   // Prazo
@@ -375,17 +363,30 @@ begin
 end;
 
 procedure TAccountForm.SyncKindFields;
+const
+  CEventColW = 200;
+  CEventRowH = 36;
+  GitHubOnlyEvents = [ekReviewRequested, ekPrApproved, ekChangesRequested, ekCiFailed];
 var
   Kind: TProviderKind;
+  E: TEventKind;
+  N: Integer;
 begin
   Kind := TProviderKind(FKind.ItemIndex);
   FLogin.Visible := Kind = pkJiraCloud;
-  FEvents[ekReviewRequested].Enabled := Kind = pkGitHub;
-  FEvents[ekFlagged].Enabled := Kind <> pkGitHub;  // Flagged é do Jira
-  FEvents[ekPrApproved].Enabled := Kind = pkGitHub;
-  FEvents[ekChangesRequested].Enabled := Kind = pkGitHub;
-  FEvents[ekCiFailed].Enabled := Kind = pkGitHub;
-  // GitHub usa a data do milestone: o campo de entrega é coisa do Jira.
+  // Grade de duas colunas só com os avisos que o provedor tem.
+  N := 0;
+  for E := Low(TEventKind) to High(TEventKind) do
+  begin
+    FEvents[E].Visible := not ((E in GitHubOnlyEvents) and (Kind <> pkGitHub)) and
+      not ((E = ekFlagged) and (Kind = pkGitHub));
+    if not FEvents[E].Visible then
+      Continue;
+    FEvents[E].SetBounds((N mod 2) * ScaleValue(CEventColW), (N div 2) * ScaleValue(CEventRowH),
+      ScaleValue(CEventColW - 8), ScaleValue(28));
+    Inc(N);
+  end;
+  FEventsHost.Height := ((N + 1) div 2) * ScaleValue(CEventRowH);
   // GitHub: issue não tem prazo; vem de um campo de data do Projects.
   if Kind = pkGitHub then
   begin

@@ -73,6 +73,8 @@ type
     { Preferências do usuário (chave/valor). }
     function GetSetting(const AName: string; const ADefault: string = ''): string;
     procedure SetSetting(const AName, AValue: string);
+    { Todas as preferências (para o backup). }
+    function ListSettings: TArray<TPair<string, string>>;
   end;
 
 function Store: TStore;
@@ -458,6 +460,25 @@ begin
     Result := ADefault
   else
     Result := V;
+end;
+
+function TStore.ListSettings: TArray<TPair<string, string>>;
+var
+  Q: TFDQuery;
+begin
+  Result := nil;
+  Q := TFDQuery.Create(nil);
+  try
+    Q.Connection := FConn;
+    Q.Open('SELECT name, value FROM setting ORDER BY name');
+    while not Q.Eof do
+    begin
+      Result := Result + [TPair<string, string>.Create(Q.Fields[0].AsString, Q.Fields[1].AsString)];
+      Q.Next;
+    end;
+  finally
+    Q.Free;
+  end;
 end;
 
 procedure TStore.SetSetting(const AName, AValue: string);

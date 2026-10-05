@@ -42,6 +42,10 @@ function FitText(const AText: string; const AFont: ISkFont; AMaxWidth: Single): 
 
 function Initials(const AName: string): string;
 
+const
+  // Texto de dica (cinza sob uma opção): menor que o texto normal e em itálico.
+  HintFontSize = 12;
+
 function EventTone(AKind: TEventKind): TUISemanticTone;
 
 { Modal entra esmaecendo (180 ms): a primeira pintura acontece invisível e

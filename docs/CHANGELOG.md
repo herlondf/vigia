@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.22.0] - 2026-10-04
+### Added
+- Backup: Configurações › Backup › Exportar/Importar. Contas, tags, issues acompanhadas à mão e preferências num arquivo `.json`. Tokens vão cifrados (DPAPI do Windows) e voltam sozinhos no mesmo usuário do Windows; em outra máquina a conta pede o token de novo. Importar atualiza a conta de mesmo nome e provedor em vez de duplicar.
+### Changed
+- Tela de conta mostra só os avisos do provedor: GitHub sem "Sinalizada"; Jira sem review, PR aprovado, mudanças pedidas e CI.
+- Textos de dica (cinza, sob uma opção ou campo) menores e em itálico em todo o app (suíte: `TUILabel.Italic`, dica do `TUIInput`).
+### Fixed
+- Campos de texto da tela de conta encolhiam para uma linha, com o texto "riscado" pela borda (suíte: `TUIInput` recalcula a altura quando a dica muda). A dica não aparece mais duplicada dentro do campo.
+
 ## [0.21.0] - 2026-10-04
 ### Added
 - Atualização automática: o Vigia instalado procura release nova uma vez por dia, avisa e se atualiza com um clique (baixa, confere o SHA-256 informado pelo GitHub, instala em silêncio e volta aberto). Em Configurações › Geral › Atualizações: Só avisar, Instalar sozinho ou Não procurar, e o botão Procurar agora.

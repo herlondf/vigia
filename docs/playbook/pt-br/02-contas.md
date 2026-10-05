@@ -7,7 +7,7 @@ Cada conta tem token, regras de aviso e liga/desliga próprios. Dá para ter vá
 1. Aba **Contas** › **Nova conta**.
 2. Escolha o **Provedor** e preencha os campos do provedor (abaixo).
 3. Clique em **Testar conexão**. Deve aparecer "Conectado como ...".
-4. Escolha os avisos e os prazos (coluna **Avisos**).
+4. Escolha os avisos e os prazos (coluna **Avisos**). Só aparecem os avisos que o provedor tem.
 5. **Salvar.** O token vai para o Credential Manager do Windows. Nunca vai para o banco.
 
 Para editar, clique na conta. Na edição, deixe o token vazio para manter o salvo.

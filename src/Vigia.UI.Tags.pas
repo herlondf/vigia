@@ -223,7 +223,7 @@ begin
   FHeading.Top := 0;
   FHeading.Align := alTop;
   FName := TUIInput.Create(Self);
-  FName.LabelText := 'Nome da tag (ex.: Chef)';
+  FName.LabelText := 'Nome da tag (ex.: Pagamentos)';
   FName.LabelMode := ilmBorder;  // rótulo na borda: texto inteiro sem fonte maior
   FName.ReserveHintSpace := False;  // a dica vai dentro do campo; embaixo duplicava
   FName.AlignWithMargins := True;
@@ -244,6 +244,8 @@ begin
   Lbl.Caption := 'Ex.: "pagamento, pix" pega toda issue com uma dessas palavras no título. ' +
     'Sem palavras, a tag vale só para as issues marcadas à mão.';
   Lbl.Variant := lvMuted;
+  Lbl.FontSize := HintFontSize;
+  Lbl.Italic := True;
   Lbl.WordWrap := True;
   Lbl.AutoSize := False;
   Lbl.Height := ScaleValue(40);

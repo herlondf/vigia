@@ -12,6 +12,7 @@ uses
   Vigia.Diff in '..\src\Vigia.Diff.pas',
   Vigia.TrayIcon in '..\src\Vigia.TrayIcon.pas',
   Vigia.Update in '..\src\Vigia.Update.pas',
+  Vigia.Backup in '..\src\Vigia.Backup.pas',
   Winapi.Windows,
   Vcl.Graphics,
   System.Types,
@@ -305,6 +306,64 @@ begin
   Check(ItemAllowed(A, 'APP-1') and not ItemAllowed(A, 'ABC-9'), 'filtro: projeto do Jira');
 end;
 
+{ Backup sem tokens (o teste não toca no Credential Manager). }
+procedure TestBackup;
+var
+  Src, Dst: TStore;
+  DbA, DbB, Json: string;
+  A: TAccount;
+  T: TTag;
+  L: TArray<TAccount>;
+  R: TBackupResult;
+begin
+  DbA := TPath.Combine(TPath.GetTempPath, 'vigia-bk-a.db');
+  DbB := TPath.Combine(TPath.GetTempPath, 'vigia-bk-b.db');
+  Json := TPath.Combine(TPath.GetTempPath, 'vigia-bk.json');
+  if TFile.Exists(DbA) then TFile.Delete(DbA);
+  if TFile.Exists(DbB) then TFile.Delete(DbB);
+  Src := TStore.Create(DbA);
+  Dst := TStore.Create(DbB);
+  try
+    A := NewAccount(pkGitHub);
+    A.Name := 'Pessoal';
+    A.Events := [ekComment, ekCiFailed];
+    A.IncludeList := 'o/app';
+    A.MyPrs := True;
+    Src.SaveAccount(A);
+    Src.AddManualKey(A.Id, 'o/app#7');
+    T := Default(TTag);
+    T.Name := 'Pagamentos';
+    T.Keywords := 'pix';
+    T.AccountId := A.Id;
+    Src.SaveTag(T);
+    Src.SetItemTag(T.Id, A.Id, 'o/app#7', True);
+    Src.SetSetting('theme', 'dark');
+    Src.SetSetting('update_last', '2026-01-01');
+    ExportBackup(Src, Json, False);
+
+    // Já existe uma conta com o mesmo nome: é atualizada, não duplicada.
+    A := NewAccount(pkGitHub);
+    A.Name := 'Pessoal';
+    Dst.SaveAccount(A);
+    R := ImportBackup(Dst, Json, False);
+    L := Dst.ListAccounts;
+    Check((Length(L) = 1) and (L[0].Events = [ekComment, ekCiFailed]) and L[0].MyPrs and
+      (L[0].IncludeList = 'o/app'), 'backup: conta atualizada, não duplicada');
+    Check(Length(Dst.ListManualKeys(L[0].Id)) = 1, 'backup: acompanhamento manual');
+    Check((Length(Dst.ListTags) = 1) and Dst.ListTags[0].HasManual(L[0].Id, 'o/app#7'), 'backup: tag e marcação');
+    Check((Dst.GetSetting('theme') = 'dark') and (Dst.GetSetting('update_last') = ''),
+      'backup: preferência vem, estado de execução não');
+    Check((R.Accounts = 1) and (R.Tags = 1), 'backup: contagem ' + R.Summary);
+    R := ImportBackup(Dst, Json, False);
+    Check((Length(Dst.ListAccounts) = 1) and (Length(Dst.ListTags) = 1), 'backup: importar de novo não duplica');
+  finally
+    Src.Free;
+    Dst.Free;
+  end;
+  Check(UnprotectText(ProtectText('token-ç')) = 'token-ç', 'DPAPI: ida e volta');
+  Check(UnprotectText('lixo') = '', 'DPAPI: texto inválido vira vazio');
+end;
+
 procedure TestVersions;
 begin
   Check(CompareVersions('0.20.0', '0.21.0') < 0, 'versão: menor');
@@ -525,6 +584,7 @@ begin
     TestDiff;
     TestManualKey;
     TestVersions;
+    TestBackup;
     TestCleanComment;
     TestTags;
     TestPrsAndFilter;

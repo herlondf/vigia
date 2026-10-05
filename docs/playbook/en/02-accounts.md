@@ -7,7 +7,7 @@ Each account has its own token, alert rules and on/off switch. You can have seve
 1. **Contas** (Accounts) tab › **Nova conta** (New account).
 2. Pick the **Provedor** (Provider) and fill in its fields (below).
 3. Click **Testar conexão** (Test connection). You should see "Conectado como ..." (Connected as ...).
-4. Choose the alerts and due-date thresholds (**Avisos** column).
+4. Choose the alerts and due-date thresholds (**Avisos** column). Only the alerts the provider supports are shown.
 5. **Salvar** (Save). The token goes to the Windows Credential Manager. It never goes to the database.
 
 To edit, click the account. While editing, leave the token empty to keep the saved one.

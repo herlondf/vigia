@@ -35,6 +35,16 @@ Em **Configurações › Geral › Atualizações**:
 
 Também dá para rodar o instalador novo por cima, baixado da página de releases.
 
+## Backup e troca de máquina
+
+**Configurações › Backup**:
+- **Exportar...** salva contas, tags, issues acompanhadas à mão e preferências num arquivo `.json`.
+- **Importar...** traz de volta. Conta com o mesmo nome e provedor é atualizada; as outras entram.
+
+Os tokens vão no arquivo cifrados pelo Windows. No mesmo usuário do Windows eles voltam sozinhos. Em outro usuário ou outra máquina, a conta volta sem token: edite a conta e cole o token de novo.
+
+Desinstalar e instalar de novo na mesma máquina não perde nada: banco e tokens ficam. O backup serve para trocar de máquina ou guardar uma cópia.
+
 ## Desinstalar
 
 **Configurações do Windows › Aplicativos › Vigia › Desinstalar.** O desinstalador fecha o Vigia e tira o "Iniciar com o Windows".

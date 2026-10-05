@@ -20,7 +20,8 @@ uses
   Vigia.UI.Notify in 'Vigia.UI.Notify.pas',
   Vigia.AI in 'Vigia.AI.pas',
   Vigia.UI.Tags in 'Vigia.UI.Tags.pas',
-  Vigia.Update in 'Vigia.Update.pas';
+  Vigia.Update in 'Vigia.Update.pas',
+  Vigia.Backup in 'Vigia.Backup.pas';
 
 var
   Mutex: THandle;

@@ -218,6 +218,8 @@ type
     procedure StartUpdate(AShow: Boolean);
     procedure UpdateMenuClick(Sender: TObject);
     procedure UpdateBtnClick(Sender: TObject);
+    procedure ExportClick(Sender: TObject);
+    procedure ImportClick(Sender: TObject);
     function InQuietHours: Boolean;
     function KeyOf(const AItem: TItem): string;
     procedure AccountMenuClick(Sender: TObject; const AID: string);
@@ -327,6 +329,7 @@ uses
   System.Threading,
   System.Generics.Defaults,
   System.Win.Registry,
+  Vcl.Dialogs,
   UI.Assistant.Tools,
   Vcl.Clipbrd,
   UI.Fonts,
@@ -346,7 +349,8 @@ uses
   Vigia.UI.Account,
   Vigia.UI.Status,
   Vigia.UI.Tags,
-  Vigia.UI.Notify;
+  Vigia.UI.Notify,
+  Vigia.Backup;
 
 const
   // ponytail: intervalo fixo e sem backoff; virar config por conta se o rate limit apertar.
@@ -867,6 +871,8 @@ begin
   FTagHint := TUILabel.Create(Self);
   FTagHint.Caption := 'Botão direito numa issue › Tag › Gerenciar para criar (ex.: #Bug, #Feature)';
   FTagHint.Variant := lvMuted;
+  FTagHint.FontSize := HintFontSize;
+  FTagHint.Italic := True;
   FTagHint.AutoSize := False;
   FTagHint.Width := ScaleValue(600);
   FTagHint.Left := 900000;
@@ -1021,6 +1027,8 @@ var
     Lbl := TUILabel.Create(Self);
     Lbl.Caption := ADesc;
     Lbl.Variant := lvMuted;
+    Lbl.FontSize := HintFontSize;
+    Lbl.Italic := True;
     Lbl.AutoSize := False;
     Lbl.WordWrap := True;
     Lbl.Parent := Text;
@@ -1244,6 +1252,26 @@ begin
   FAiPriceIn.Width := ScaleValue(156);
   FAiPriceIn.Align := alLeft;
   FAiPriceIn.Parent := Host;
+
+  Card := NewSection('Backup', 1);
+  Host := NewRow(Card, 'Contas e configurações', 'Arquivo com contas, tags, issues acompanhadas e ' +
+    'preferências. Os tokens vão cifrados e só voltam neste usuário do Windows.', 260);
+  Btn := TUIButton.Create(Self);
+  Btn.Caption := 'Importar...';
+  Btn.Variant := bvOutline;
+  Btn.AutoWidth := True;
+  Btn.OnClick := ImportClick;
+  Btn.AlignWithMargins := True;
+  Btn.Margins.SetBounds(Sp(S.S2), 0, 0, 0);
+  Btn.Align := alRight;
+  Btn.Parent := Host;
+  Btn := TUIButton.Create(Self);
+  Btn.Caption := 'Exportar...';
+  Btn.Variant := bvOutline;
+  Btn.AutoWidth := True;
+  Btn.OnClick := ExportClick;
+  Btn.Align := alRight;
+  Btn.Parent := Host;
 
   Card := NewSection('IA automática', 6);
   Host := NewRow(Card, 'Limite por mês (US$)', 'Chegou no limite, o chat e as tarefas automáticas param ' +
@@ -3949,6 +3977,66 @@ begin
           MenuExitClick(nil);
         end);
     end);
+end;
+
+procedure TMainForm.ExportClick(Sender: TObject);
+var
+  D: TSaveDialog;
+  Targets: TArray<string>;
+  AK: TAiProviderKind;
+begin
+  D := TSaveDialog.Create(nil);
+  try
+    D.Title := 'Exportar contas e configurações';
+    D.Filter := 'Backup do Vigia (*.json)|*.json';
+    D.DefaultExt := 'json';
+    D.FileName := 'Vigia-backup-' + FormatDateTime('yyyy-mm-dd', Date) + '.json';
+    D.Options := D.Options + [ofOverwritePrompt];
+    if not D.Execute(Handle) then
+      Exit;
+    Targets := [AssistantSecret];
+    for AK := Low(TAiProviderKind) to High(TAiProviderKind) do
+      Targets := Targets + [AiSecretTarget(AK)];
+    ExportBackup(Store, D.FileName, True, Targets);
+    TUIToastManager.Show('Backup salvo em ' + ExtractFileName(D.FileName), ttSuccess);
+  finally
+    D.Free;
+  end;
+end;
+
+procedure TMainForm.ImportClick(Sender: TObject);
+var
+  D: TOpenDialog;
+  R: TBackupResult;
+begin
+  D := TOpenDialog.Create(nil);
+  try
+    D.Title := 'Importar contas e configurações';
+    D.Filter := 'Backup do Vigia (*.json)|*.json';
+    if not D.Execute(Handle) then
+      Exit;
+    if not AskConfirm(Self, 'Importar backup', 'Conta com o mesmo nome e provedor é atualizada; ' +
+      'as outras entram. Tags, issues acompanhadas e preferências também.', 'Importar') then
+      Exit;
+    try
+      R := ImportBackup(Store, D.FileName);
+    except
+      on E: Exception do
+      begin
+        TUIToastManager.Show('Não importou: ' + E.Message, ttError, 8000);
+        Exit;
+      end;
+    end;
+    ReloadAccounts;
+    LoadItems;
+    LoadAiSettings;
+    FPollAll := True;
+    Poll(False);
+    TUIToastManager.Show('Importado: ' + R.Summary + ' Tema e intervalos valem ao reabrir o Vigia.',
+      ttSuccess, 10000);
+  finally
+    D.Free;
+  end;
 end;
 
 procedure TMainForm.UpdateMenuClick(Sender: TObject);

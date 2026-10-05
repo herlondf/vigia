@@ -35,6 +35,16 @@ In **Configurações › Geral › Atualizações** (Settings › General › Up
 
 You can also run the new installer over the old one, downloaded from the releases page.
 
+## Backup and moving to another machine
+
+**Configurações › Backup**:
+- **Exportar...** (Export) saves accounts, tags, manually followed issues and preferences to a `.json` file.
+- **Importar...** (Import) brings them back. An account with the same name and provider is updated; the others are added.
+
+Tokens go into the file encrypted by Windows. For the same Windows user they come back by themselves. For another user or machine, the account comes back without a token: edit it and paste the token again.
+
+Uninstalling and installing again on the same machine loses nothing: database and tokens stay. Backup is for moving to another machine or keeping a copy.
+
 ## Uninstall
 
 **Windows Settings › Apps › Vigia › Uninstall.** The uninstaller closes Vigia and removes the "start with Windows" entry.
